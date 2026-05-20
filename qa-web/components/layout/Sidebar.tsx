@@ -17,7 +17,7 @@ const navItems = [
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
-  const { healthStatus } = useHealth()
+  const { data: healthStatus } = useHealth()
 
   return (
     <aside className="flex h-full w-full flex-col bg-surface border-r border-border">

@@ -50,10 +50,23 @@ class MalformedAuditOutputError(ValueError):
 
 
 def validate_repo(repo: str) -> str:
-    """Validate GitHub repository format."""
+    """Validate GitHub repository format and accessibility."""
     normalized = (repo or "").strip()
     if not REPO_PATTERN.match(normalized):
         raise InvalidRepoError("Repository must be in 'owner/repo' format.")
+    
+    try:
+        from github import Github
+        if not config.GITHUB_TOKEN:
+            raise InvalidRepoError("GITHUB_TOKEN is not configured on the server.")
+        gh = Github(config.GITHUB_TOKEN)
+        # This will fetch repository details or raise an exception if inaccessible/missing
+        gh.get_repo(normalized)
+    except Exception as exc:
+        raise InvalidRepoError(
+            f"Repository '{normalized}' is not accessible or does not exist on GitHub. (Details: {exc})"
+        )
+        
     return normalized
 
 
@@ -138,6 +151,8 @@ async def run_audit_pipeline(
     pr_number: Optional[int] = None,
     base_commit: Optional[str] = None,
     head_commit: Optional[str] = None,
+    base_url: Optional[str] = None,
+    origin: str = "manual",
 ) -> Dict[str, Any]:
     """Run the existing LangGraph pipeline in API-safe auto mode."""
     config.ensure_runtime_dirs()
@@ -156,6 +171,8 @@ async def run_audit_pipeline(
         "auto_run": True,
         "probe_results": {},
         "errors": [],
+        "base_url": base_url,
+        "origin": origin,
     }
 
     final_state = await pipeline.ainvoke(initial_state)
@@ -181,6 +198,7 @@ def build_audit_response(final_state: Dict[str, Any], repo: str) -> Dict[str, An
         "findings": findings,
         "report_markdown": report_markdown,
         "report_path": config.to_project_relative(LATEST_REPORT_PATH),
+        "origin": final_state.get("origin", "manual"),
     }
 
 
@@ -202,6 +220,7 @@ def persist_audit_result(
             probe_count=audit_response["probe_count"],
             findings=audit_response["findings"],
             report_markdown=audit_response["report_markdown"],
+            origin=audit_response.get("origin", "manual"),
         )
     except SupabasePersistenceError as exc:
         raise AuditPersistenceError(str(exc)) from exc
@@ -229,17 +248,24 @@ def build_latest_audit_response() -> Dict[str, Any]:
         findings = latest_db_audit.get("findings", [])
         if not isinstance(findings, list):
             raise MalformedAuditOutputError("Latest Supabase audit findings are malformed.")
-        report_markdown = latest_db_audit.get("report_markdown", "")
-        if not isinstance(report_markdown, str) or not report_markdown.strip():
-            raise MalformedAuditOutputError("Latest Supabase audit markdown is missing.")
+        report_markdown = latest_db_audit.get("report_markdown")
+        if not isinstance(report_markdown, str):
+            report_markdown = ""
+        
+        status = latest_db_audit.get("status", "completed")
+        # Only require non-empty report markdown if status is completed
+        if status == "completed" and not report_markdown.strip():
+            report_markdown = "Audit completed, but no report markdown was generated."
+
         return {
             "audit_id": latest_db_audit.get("id"),
-            "status": latest_db_audit.get("status", "completed"),
+            "status": status,
             "repo": latest_db_audit.get("repo", ""),
             "probe_count": latest_db_audit.get("probe_count", 0),
             "findings": findings,
             "report_markdown": report_markdown,
             "report_path": config.to_project_relative(LATEST_REPORT_PATH),
+            "origin": latest_db_audit.get("origin", "manual"),
         }
 
     report_markdown, _ = read_report_markdown()
@@ -255,4 +281,5 @@ def build_latest_audit_response() -> Dict[str, Any]:
         "findings": findings,
         "report_markdown": report_markdown,
         "report_path": config.to_project_relative(LATEST_REPORT_PATH),
+        "origin": "manual",
     }

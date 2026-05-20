@@ -21,3 +21,18 @@ create table if not exists public.logs (
 create index if not exists audits_created_at_idx on public.audits (created_at desc);
 create index if not exists logs_audit_id_idx on public.logs (audit_id);
 create index if not exists logs_created_at_idx on public.logs (created_at desc);
+
+-- Webhook triggers metadata
+create table if not exists public.webhooks (
+    repo text primary key,
+    webhook_id bigint not null,
+    webhook_secret text not null,
+    enabled boolean not null default true,
+    created_at timestamptz not null default timezone('utc', now()),
+    last_push_received timestamptz,
+    last_auto_audit timestamptz
+);
+
+-- Track execution origin (manual or webhook github_push)
+alter table public.audits add column if not exists origin text not null default 'manual';
+

@@ -38,6 +38,11 @@ export default function TerminalLogs() {
   const { logs, phase } = useAudit()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [mode, setMode] = useState<'grouped' | 'raw'>('grouped')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     const el = containerRef.current
@@ -45,7 +50,11 @@ export default function TerminalLogs() {
     el.scrollTop = el.scrollHeight
   }, [logs])
 
-  // Group logs by source
+  const displayClock = (timestamp?: string) => {
+    if (!mounted) return '--:--:--'
+    return formatClock(timestamp)
+  }
+
   const grouped = logs.reduce<Record<string, typeof logs>>((acc, log) => {
     if (!acc[log.source]) acc[log.source] = []
     acc[log.source].push(log)
@@ -55,16 +64,16 @@ export default function TerminalLogs() {
   return (
     <section className="border border-border rounded bg-surface flex flex-col">
       {/* Header */}
-      <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Terminal className="w-3.5 h-3.5 text-faint" />
+      <div className="px-4 sm:px-5 py-3 border-b border-border flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Terminal className="w-3.5 h-3.5 text-faint flex-shrink-0" />
           <h2 className="font-medium text-[13px] text-ink">Execution Log</h2>
-          <span className="text-[11px] font-mono text-faint ml-1">· {logs.length} events</span>
+          <span className="text-[11px] font-mono text-faint ml-1 hidden sm:block">· {logs.length} events</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
           {(['grouped', 'raw'] as const).map(m => (
             <button key={m} type="button" onClick={() => setMode(m)}
-              className={cn('px-2.5 py-1 rounded text-[11px] font-mono transition-colors',
+              className={cn('px-2 sm:px-2.5 py-1 rounded text-[11px] font-mono transition-colors',
                 mode === m ? 'bg-s3 text-ink border border-border' : 'text-faint hover:text-muted'
               )}>
               {m}
@@ -73,10 +82,10 @@ export default function TerminalLogs() {
         </div>
       </div>
 
-      {/* Terminal body */}
+      {/* Terminal body — min/max height adapts to screen */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-4 font-mono text-[11px] bg-[#050a12] min-h-[320px] max-h-[400px]"
+        className="flex-1 overflow-y-auto p-3 sm:p-4 font-mono text-[11px] bg-[#050a12] min-h-[240px] sm:min-h-[320px] max-h-[320px] sm:max-h-[400px]"
       >
         {logs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-faint text-center">
@@ -86,27 +95,25 @@ export default function TerminalLogs() {
             </div>
           </div>
         ) : mode === 'raw' ? (
-          // Raw mode
           <div className="space-y-1">
             {logs.map((log) => (
               <div key={log.id} className="log-row flex gap-2 leading-5">
-                <span className="text-faint flex-shrink-0">{formatClock(log.timestamp)}</span>
+                <span className="text-faint flex-shrink-0 hidden sm:block">{displayClock(log.timestamp)}</span>
                 <span className={cn('flex-shrink-0 w-3', levelBadge(log.level))}>{levelPrefix(log.level)}</span>
                 <span className="text-muted flex-shrink-0">[{log.source}]</span>
-                <span className="text-ink/90">{log.message}</span>
-                {log.details && <span className="text-faint">· {log.details}</span>}
+                <span className="text-ink/90 break-all">{log.message}</span>
+                {log.details && <span className="text-faint hidden sm:block">· {log.details}</span>}
               </div>
             ))}
             {phase === 'running' && (
               <div className="flex gap-2 leading-5 text-accent-blue">
-                <span className="text-faint">{formatClock(new Date().toISOString())}</span>
+                <span className="text-faint hidden sm:block">{displayClock(new Date().toISOString())}</span>
                 <span>›</span>
                 <span>awaiting backend response<span className="cursor-blink" /></span>
               </div>
             )}
           </div>
         ) : (
-          // Grouped mode
           <div className="space-y-4">
             {Object.entries(grouped).map(([source, entries]) => (
               <div key={source}>
@@ -115,18 +122,18 @@ export default function TerminalLogs() {
                   <span className="text-muted text-[11px] uppercase tracking-widest">{source}</span>
                   <div className="flex-1 h-px bg-border/40" />
                 </div>
-                <div className="pl-3.5 space-y-1 border-l border-border/40">
+                <div className="pl-3 sm:pl-3.5 space-y-1 border-l border-border/40">
                   {entries.map(log => (
                     <div key={log.id} className="log-row">
                       <div className="flex items-start gap-2">
-                        <span className="text-faint flex-shrink-0">{formatClock(log.timestamp)}</span>
+                        <span className="text-faint flex-shrink-0 hidden sm:block">{displayClock(log.timestamp)}</span>
                         <span className={cn(levelBadge(log.level), 'flex-shrink-0')}>{levelPrefix(log.level)}</span>
-                        <span className={cn('flex-1 leading-5', log.level === 'error' ? 'text-accent-red' : log.level === 'success' ? 'text-ink/90' : 'text-muted')}>
+                        <span className={cn('flex-1 leading-5 break-words', log.level === 'error' ? 'text-accent-red' : log.level === 'success' ? 'text-ink/90' : 'text-muted')}>
                           {log.message}
                         </span>
                       </div>
                       {log.details && (
-                        <p className="ml-[calc(6ch+8px)] text-faint text-[10px] leading-4 mt-0.5">{log.details}</p>
+                        <p className="ml-4 sm:ml-[calc(6ch+8px)] text-faint text-[10px] leading-4 mt-0.5">{log.details}</p>
                       )}
                     </div>
                   ))}
@@ -136,7 +143,7 @@ export default function TerminalLogs() {
             {phase === 'running' && (
               <div className="flex items-center gap-2 text-accent-blue">
                 <div className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-ping-slow flex-shrink-0" />
-                <span className="text-[11px]">backend://awaiting-response<span className="cursor-blink" /></span>
+                <span className="text-[11px] break-all">backend://awaiting-response<span className="cursor-blink" /></span>
               </div>
             )}
           </div>

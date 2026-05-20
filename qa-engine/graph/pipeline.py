@@ -37,6 +37,7 @@ class PipelineState(TypedDict):
     audit_report: Optional[str]
     report_path: Optional[str]
     github_issue_urls: Optional[list[str]]
+    base_url: Optional[str]
     errors: Annotated[list, operator.add]
 
 
@@ -139,6 +140,15 @@ async def probe_executor_node(state: ProbeState) -> dict:
             "PIPELINE",
             f"Probe {probe_id} done. {result.get('passed', 0)}/{result.get('total_cases', 0)} passed.",
         )
+        try:
+            from api.service import flatten_findings
+            flat = flatten_findings({result["probe_id"]: result})
+            from utils.trace import event_emitter
+            emitter = event_emitter.get()
+            if emitter:
+                emitter("findings", flat)
+        except Exception:
+            pass
         return {"probe_results": {result["probe_id"]: result}}
     except Exception as exc:
         trace("PIPELINE", f"Probe {probe_id} ERROR: {exc}")
@@ -149,7 +159,7 @@ def dispatch_probes(state: PipelineState) -> list[Send]:
     """Create one Send step per selected probe."""
     plan = state.get("probe_plan") or {"probes": []}
     selected = state.get("selected_probes") or []
-    base_url = config.STAGING_BASE_URL or "http://localhost:8000"
+    base_url = state.get("base_url") or config.STAGING_BASE_URL or "http://localhost:8000"
 
     sends = [
         Send("probe_executor_node", {"probe": probe, "base_url": base_url})

@@ -24,8 +24,10 @@ GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 
-# --- Staging ---
+# --- Staging & Webhooks ---
 STAGING_BASE_URL: str = os.getenv("STAGING_BASE_URL", "http://localhost:8000")
+WEBHOOK_URL_BASE: str = os.getenv("WEBHOOK_URL_BASE", "http://localhost:8000")
+
 
 # --- Defaults ---
 DEFAULT_BRANCH: str = os.getenv("DEFAULT_BRANCH", "main")

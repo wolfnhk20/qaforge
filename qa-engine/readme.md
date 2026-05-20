@@ -180,6 +180,18 @@ Response:
 
 Returns the latest persisted audit if Supabase is configured. If Supabase is unavailable, it falls back to local output artifacts.
 
+#### `POST /webhook/github`
+
+Receives and processes GitHub push events. Validates payload integrity via HMAC-SHA256 signature, logs push metadata, and launches a background audit run.
+
+#### `GET /repos/{owner}/{repo}/webhook`
+
+Gets the status of the GitHub webhook auto-audit configuration for a given repository.
+
+#### `POST /repos/{owner}/{repo}/webhook/toggle`
+
+Enables or disables auto-audits for a repository by creating or removing the webhook from GitHub's repository settings.
+
 ## Supabase Integration
 
 Supabase is the persistence layer for product-facing state.

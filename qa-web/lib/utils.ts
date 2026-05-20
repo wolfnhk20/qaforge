@@ -12,7 +12,7 @@ import type {
 export const APP_NAME = 'QAForge'
 
 export const DEFAULT_REPO: Repo = {
-  fullName: 'openai/openai',
+  fullName: '',
   module: '.',
   branch: 'main',
   scope: 'full_module',

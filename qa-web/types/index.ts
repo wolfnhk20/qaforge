@@ -29,7 +29,17 @@ export interface AuditResponse {
   findings: Findings[]
   report_markdown: string
   report_path: string
+  origin?: 'manual' | 'github_push'
 }
+
+export interface WebhookConfig {
+  enabled: boolean
+  webhook_id?: number
+  created_at?: string
+  last_push_received?: string
+  last_auto_audit?: string
+}
+
 
 export interface Repo {
   fullName: string
@@ -39,6 +49,7 @@ export interface Repo {
   prNumber?: number
   baseCommit?: string
   headCommit?: string
+  baseUrl?: string
 }
 
 export interface AuditRequestPayload {
@@ -49,6 +60,7 @@ export interface AuditRequestPayload {
   pr_number?: number
   base_commit?: string
   head_commit?: string
+  base_url?: string
 }
 
 export interface PipelineStage {
@@ -108,4 +120,6 @@ export interface AuthSession {
   expires_at: number
   token_type?: string
   user: AuthUser | null
+  provider_token?: string
+  provider_refresh_token?: string
 }

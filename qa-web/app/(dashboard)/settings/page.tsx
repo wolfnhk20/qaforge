@@ -1,4 +1,48 @@
+'use client'
+
+import { useAuth } from '@/lib/auth'
+
 export default function SettingsPage() {
+  const { session, signInWithGitHub, signOut } = useAuth()
+  const isConnected = Boolean(session?.provider_token)
+
+  const items = [
+    {
+      title: 'GitHub OAuth',
+      desc: isConnected
+        ? `Connected to GitHub as ${session?.user?.user_name || session?.user?.email || 'operator'}. Ready to load your repositories.`
+        : 'Connect your GitHub account to load repositories dynamically and enable webhook triggers on push.',
+      status: isConnected ? 'connected' : 'not connected',
+      action: isConnected ? 'Disconnect' : 'Connect',
+      accent: isConnected ? 'green' : 'blue',
+      onClick: isConnected ? () => void signOut() : () => void signInWithGitHub(),
+    },
+    {
+      title: 'Webhook Triggers',
+      desc: 'Auto-trigger audits on git push events. Requires GitHub OAuth to be configured first.',
+      status: 'coming soon',
+      action: null,
+      accent: 'amber',
+      onClick: null,
+    },
+    {
+      title: 'Staging Environment',
+      desc: 'Configure the staging base URL for runtime probe execution against your deployed API.',
+      status: 'configured via .env',
+      action: 'Edit',
+      accent: 'green',
+      onClick: null,
+    },
+    {
+      title: 'Team Workspace',
+      desc: 'Shared audit history, role-based access, and collaborative finding review.',
+      status: 'coming soon',
+      action: null,
+      accent: 'amber',
+      onClick: null,
+    },
+  ]
+
   return (
     <div className="p-5 lg:p-6 max-w-2xl">
       <div className="mb-6">
@@ -7,36 +51,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid gap-4">
-        {[
-          {
-            title: 'GitHub OAuth',
-            desc: 'Connect your GitHub account to load repositories dynamically and enable webhook triggers on push.',
-            status: 'not connected',
-            action: 'Connect',
-            accent: 'blue',
-          },
-          {
-            title: 'Webhook Triggers',
-            desc: 'Auto-trigger audits on git push events. Requires GitHub OAuth to be configured first.',
-            status: 'coming soon',
-            action: null,
-            accent: 'amber',
-          },
-          {
-            title: 'Staging Environment',
-            desc: 'Configure the staging base URL for runtime probe execution against your deployed API.',
-            status: 'configured via .env',
-            action: 'Edit',
-            accent: 'green',
-          },
-          {
-            title: 'Team Workspace',
-            desc: 'Shared audit history, role-based access, and collaborative finding review.',
-            status: 'coming soon',
-            action: null,
-            accent: 'amber',
-          },
-        ].map(item => (
+        {items.map(item => (
           <div key={item.title} className="border border-border rounded bg-surface px-5 py-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -55,6 +70,7 @@ export default function SettingsPage() {
               {item.action && (
                 <button
                   type="button"
+                  onClick={item.onClick || undefined}
                   className="flex-shrink-0 h-7 px-3 rounded border border-border text-[12px] text-muted hover:text-ink hover:bg-s2 transition-colors"
                 >
                   {item.action}

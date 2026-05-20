@@ -1,3 +1,6 @@
+'use client'
+
+import { useAudit } from '@/hooks/useAudit'
 import AuditLauncher from '@/components/dashboard/AuditLauncher'
 import FindingsTable from '@/components/dashboard/FindingsTable'
 import PipelineView from '@/components/dashboard/PipelineView'
@@ -6,25 +9,30 @@ import ReportViewer from '@/components/dashboard/ReportViewer'
 import TerminalLogs from '@/components/dashboard/TerminalLogs'
 
 export default function DashboardPage() {
+  const { phase } = useAudit()
+  const hasAuditRun = phase !== 'idle'
+
   return (
-    <div className="p-5 lg:p-6 grid gap-4">
-      {/* Primary grid: control + execution side-by-side */}
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        {/* Left column: config + launcher + pipeline */}
-        <div className="grid gap-4 content-start">
+    <div className="p-4 sm:p-5 lg:p-6 space-y-4">
+      {/* Two-column grid on xl+, single column below */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+        {/* Left: config → launcher */}
+        <div className="space-y-4">
           <RepoSelector />
           <AuditLauncher />
-          <PipelineView />
         </div>
-        {/* Right column: logs + findings preview */}
-        <div className="grid gap-4 content-start">
+        {/* Right: terminal → compact findings */}
+        <div className="space-y-4">
           <TerminalLogs />
-          <FindingsTable compact />
+          {hasAuditRun && <FindingsTable compact />}
         </div>
       </div>
 
+      {/* Multi-Agent Pipeline takes both columns */}
+      {hasAuditRun && <PipelineView />}
+
       {/* Full-width report */}
-      <ReportViewer />
+      {hasAuditRun && <ReportViewer />}
     </div>
   )
 }

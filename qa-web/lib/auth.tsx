@@ -171,6 +171,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const refreshed = await refreshSession(cached.refresh_token)
+        if (!refreshed.provider_token && cached.provider_token) {
+          refreshed.provider_token = cached.provider_token
+        }
+        if (!refreshed.provider_refresh_token && cached.provider_refresh_token) {
+          refreshed.provider_refresh_token = cached.provider_refresh_token
+        }
         persistSession(refreshed)
         setSession(refreshed)
       } catch {
@@ -201,6 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const url = new URL(`${supabaseUrl}/auth/v1/authorize`)
     url.searchParams.set('provider', 'github')
     url.searchParams.set('redirect_to', redirectTo)
+    url.searchParams.set('scopes', 'repo write:repo_hook')
     url.searchParams.set('code_challenge', challenge)
     url.searchParams.set('code_challenge_method', 'S256')
 

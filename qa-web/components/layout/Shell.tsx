@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 
 import { useAuth } from '@/lib/auth'
@@ -14,6 +14,26 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
+  // Close sidebar on route change
+  useEffect(() => { setSidebarOpen(false) }, [pathname])
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
+  // Prevent body scroll only when mobile sidebar is open
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.documentElement.style.overflow = 'hidden'
+    } else {
+      document.documentElement.style.overflow = ''
+    }
+    return () => { document.documentElement.style.overflow = '' }
+  }, [sidebarOpen])
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`)
@@ -25,10 +45,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen items-center justify-center bg-bg">
         <div className="text-center">
           <div className="flex items-center justify-center gap-1 mb-6">
-            {[0,1,2].map(i => (
-              <div key={i}
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
                 className="w-1.5 h-5 rounded-full bg-accent-blue"
-                style={{ animation: `dot-blink 1.1s ease-in-out ${i*0.18}s infinite` }}
+                style={{ animation: `dot-blink 1.1s ease-in-out ${i * 0.18}s infinite` }}
               />
             ))}
           </div>
@@ -39,20 +60,26 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-bg text-ink">
-      {/* Desktop sidebar */}
-      <div className="hidden w-[240px] shrink-0 lg:block h-screen sticky top-0">
+    /*
+     * Root: full viewport height, flex row.
+     * Sidebar is sticky. Main column stretches and scrolls its content.
+     */
+    <div className="flex h-screen bg-bg text-ink overflow-hidden">
+
+      {/* ── Desktop sidebar ── */}
+      <div className="hidden lg:flex flex-col w-[240px] flex-shrink-0 h-screen overflow-y-auto">
         <Sidebar />
       </div>
 
-      {/* Mobile sidebar overlay */}
+      {/* ── Mobile sidebar overlay ── */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-bg/80 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
         >
           <div
-            className="h-full w-[240px]"
+            className="h-full w-[240px] max-w-[80vw] overflow-y-auto shadow-panel"
             onClick={e => e.stopPropagation()}
           >
             <Sidebar onNavigate={() => setSidebarOpen(false)} />
@@ -60,10 +87,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Main content */}
-      <div className="min-w-0 flex-1 flex flex-col">
+      {/* ── Main area ── */}
+      <div className="flex flex-col flex-1 min-w-0 h-screen">
+        {/* Topbar — fixed height, never scrolls */}
         <Topbar onMenuClick={() => setSidebarOpen(v => !v)} />
-        <main className="flex-1 overflow-x-hidden">
+
+        {/* Page content — this is the ONLY scroll container */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">
           {children}
         </main>
       </div>

@@ -8,32 +8,33 @@ import { cn } from '@/lib/utils'
 
 export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
   const { phase, latestAudit, latestAuditQuery } = useAudit()
-  const { healthStatus } = useHealth()
+  const { data: healthStatus } = useHealth()
 
   return (
-    <header className="h-[48px] flex items-center justify-between border-b border-border bg-surface px-4 gap-4">
-      {/* Left: hamburger + breadcrumb */}
-      <div className="flex items-center gap-3">
+    <header className="h-[48px] flex items-center justify-between border-b border-border bg-surface px-3 sm:px-4 gap-2 flex-shrink-0">
+      {/* Left */}
+      <div className="flex items-center gap-2 min-w-0">
         <button
           type="button"
           onClick={onMenuClick}
-          className="lg:hidden p-1 text-faint hover:text-ink transition-colors"
+          className="lg:hidden p-1.5 -ml-1 text-faint hover:text-ink transition-colors rounded hover:bg-s2 flex-shrink-0"
+          aria-label="Toggle sidebar"
         >
           <Menu className="w-4 h-4" />
         </button>
-        <div className="flex items-center gap-2 font-mono text-[11px]">
-          <span className="text-faint">qaforge</span>
-          <span className="text-border">/</span>
-          <span className="text-muted">control-plane</span>
+        <div className="flex items-center gap-1.5 font-mono text-[11px] min-w-0">
+          <span className="text-faint hidden sm:block">qaforge</span>
+          <span className="text-border hidden sm:block">/</span>
+          <span className="text-muted truncate">control-plane</span>
         </div>
       </div>
 
-      {/* Right: status indicators */}
-      <div className="flex items-center gap-3">
-        {/* Audit phase pill */}
+      {/* Right */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Audit phase pill — hidden on very small screens */}
         {phase !== 'idle' && (
           <div className={cn(
-            'flex items-center gap-1.5 rounded px-2.5 py-1 border text-[11px] font-mono',
+            'hidden xs:flex items-center gap-1.5 rounded px-2 py-0.5 border text-[11px] font-mono',
             phase === 'running'   ? 'bg-accent-blue/8 border-accent-blue/25 text-accent-blue' :
             phase === 'completed' ? 'bg-accent-green/8 border-accent-green/25 text-accent-green' :
             phase === 'error'     ? 'bg-accent-red/8 border-accent-red/25 text-accent-red' :
@@ -47,18 +48,24 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
                 ))}
               </span>
             )}
-            {phase === 'running'   ? 'AUDIT RUNNING' :
-             phase === 'completed' ? 'COMPLETED' :
-             phase === 'error'     ? 'FAILED' :
-             phase.toUpperCase()}
+            <span className="hidden sm:block">
+              {phase === 'running'   ? 'AUDIT RUNNING' :
+               phase === 'completed' ? 'COMPLETED' :
+               phase === 'error'     ? 'FAILED' :
+               phase.toUpperCase()}
+            </span>
+            {/* Compact label on mobile */}
+            <span className="sm:hidden">
+              {phase === 'running' ? 'RUN' : phase === 'completed' ? 'OK' : 'ERR'}
+            </span>
           </div>
         )}
 
-        {/* Repo context */}
+        {/* Repo context — md+ only */}
         {latestAudit?.repo && (
-          <div className="hidden sm:flex items-center gap-1.5 font-mono text-[11px] text-faint">
-            <Terminal className="w-3 h-3" />
-            <span className="text-muted">{latestAudit.repo}</span>
+          <div className="hidden md:flex items-center gap-1.5 font-mono text-[11px] text-faint min-w-0 max-w-[160px]">
+            <Terminal className="w-3 h-3 flex-shrink-0" />
+            <span className="text-muted truncate">{latestAudit.repo}</span>
           </div>
         )}
 
@@ -74,12 +81,12 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
 
         {/* Health dot */}
         <div className="flex items-center gap-1.5">
-          <div className={cn('w-1.5 h-1.5 rounded-full',
+          <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0',
             healthStatus?.status === 'ok'
               ? 'bg-accent-green shadow-[0_0_6px_rgba(46,200,154,0.6)]'
               : 'bg-accent-red shadow-[0_0_6px_rgba(245,101,101,0.6)]'
           )} />
-          <span className="text-[11px] font-mono text-faint hidden md:block">
+          <span className="text-[11px] font-mono text-faint hidden sm:block">
             {healthStatus?.status === 'ok' ? 'ok' : 'err'}
           </span>
         </div>

@@ -2,7 +2,9 @@ import type {
   AuditRequestPayload,
   AuditResponse,
   BackendHealthResponse,
+  WebhookConfig,
 } from '@/types'
+
 
 const DEFAULT_API_BASE = '/api/backend'
 
@@ -19,7 +21,7 @@ export class ApiError extends Error {
 }
 
 function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE
+  return process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || DEFAULT_API_BASE
 }
 
 async function parseErrorPayload(response: Response) {
@@ -104,9 +106,99 @@ export function startAudit(payload: AuditRequestPayload) {
   }))
 }
 
+export async function streamAudit(
+  payload: AuditRequestPayload,
+  onEvent: (event: { type: string; data: any }) => void
+): Promise<void> {
+  const url = `${getApiBaseUrl()}/audit/stream`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || ''
+    let message = `Request failed with status ${response.status}.`
+    try {
+      if (contentType.includes('application/json')) {
+        const err = await response.json()
+        message = err.detail?.message || err.detail || message
+      } else {
+        const text = await response.text()
+        message = text || message
+      }
+    } catch {}
+    throw new Error(message)
+  }
+
+  if (!response.body) {
+    throw new Error('Response body is not readable.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed.startsWith('data: ')) continue
+
+        const jsonStr = trimmed.slice(6)
+        try {
+          const event = JSON.parse(jsonStr)
+          onEvent(event)
+        } catch (err) {
+          console.error('Failed to parse SSE line:', trimmed, err)
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
 export function getLatestAudit() {
   return request<AuditResponse>('/audit/latest').then((response) => ({
     ...response,
     audit_id: response.audit_id ?? null,
   }))
 }
+
+export function getWebhookConfig(owner: string, repo: string) {
+  return request<WebhookConfig>(`/repos/${owner}/${repo}/webhook`)
+}
+
+export function toggleWebhook(
+  owner: string,
+  repo: string,
+  githubToken: string,
+  action: 'enable' | 'disable'
+) {
+  return request<{ status: string; message: string; webhook_id?: number }>(
+    `/repos/${owner}/${repo}/webhook`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        github_token: githubToken,
+        action,
+      }),
+    }
+  )
+}
+
+export function getAuditLogs(auditId: number) {
+  return request<any[]>(`/audit/${auditId}/logs`)
+}
+

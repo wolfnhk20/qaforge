@@ -44,6 +44,7 @@ def save_audit(
     probe_count: int,
     findings: list[dict[str, Any]],
     report_markdown: str,
+    origin: str = "manual",
 ) -> Dict[str, Any]:
     """Persist a completed audit row to Supabase."""
     payload = {
@@ -53,6 +54,7 @@ def save_audit(
         "probe_count": probe_count,
         "findings": findings,
         "report_markdown": report_markdown,
+        "origin": origin,
         "created_at": _utc_now_iso(),
     }
 
@@ -114,3 +116,73 @@ def save_logs(
 
     data = getattr(response, "data", None) or []
     return data[0] if data else None
+
+
+def get_webhook(repo: str) -> Optional[Dict[str, Any]]:
+    """Retrieve webhook configuration for a repo if available."""
+    if not is_configured():
+        return None
+    try:
+        response = get_client().table("webhooks").select("*").eq("repo", repo).execute()
+        data = getattr(response, "data", None) or []
+        return data[0] if data else None
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to fetch webhook: {exc}") from exc
+
+
+def save_webhook(
+    *,
+    repo: str,
+    webhook_id: int,
+    webhook_secret: str,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    """Persist/update webhook metadata in Supabase."""
+    row = {
+        "repo": repo,
+        "webhook_id": webhook_id,
+        "webhook_secret": webhook_secret,
+        "enabled": enabled,
+        "created_at": _utc_now_iso(),
+    }
+    try:
+        response = get_client().table("webhooks").upsert(row).execute()
+        data = getattr(response, "data", None) or []
+        if not data:
+            raise SupabasePersistenceError("Supabase upsert returned no webhook record.")
+        return data[0]
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to save webhook: {exc}") from exc
+
+
+def update_webhook_status(*, repo: str, enabled: bool) -> Optional[Dict[str, Any]]:
+    """Enable/disable a webhook in Supabase."""
+    try:
+        response = get_client().table("webhooks").update({"enabled": enabled}).eq("repo", repo).execute()
+        data = getattr(response, "data", None) or []
+        return data[0] if data else None
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to update webhook status: {exc}") from exc
+
+
+def update_webhook_timestamps(
+    *,
+    repo: str,
+    last_push_received: Optional[str] = None,
+    last_auto_audit: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update webhook push and audit run timestamps in Supabase."""
+    payload: Dict[str, Any] = {}
+    if last_push_received:
+        payload["last_push_received"] = last_push_received
+    if last_auto_audit:
+        payload["last_auto_audit"] = last_auto_audit
+    if not payload:
+        return None
+    try:
+        response = get_client().table("webhooks").update(payload).eq("repo", repo).execute()
+        data = getattr(response, "data", None) or []
+        return data[0] if data else None
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to update webhook timestamps: {exc}") from exc
+

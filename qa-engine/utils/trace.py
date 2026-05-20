@@ -2,8 +2,12 @@
 
 import sys
 from datetime import datetime
+import contextvars
+from typing import Any, Callable, Optional
 
 import config
+
+event_emitter: contextvars.ContextVar[Optional[Callable[[str, Any], None]]] = contextvars.ContextVar("event_emitter", default=None)
 
 
 def trace(agent: str, msg: str) -> None:
@@ -19,3 +23,10 @@ def trace(agent: str, msg: str) -> None:
             handle.write(line + "\n")
     except OSError:
         pass
+
+    emitter = event_emitter.get()
+    if emitter is not None:
+        try:
+            emitter("log", {"agent": agent, "message": msg, "timestamp": timestamp})
+        except Exception:
+            pass

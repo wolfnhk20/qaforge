@@ -30,6 +30,7 @@ interface AuditStoreState {
   completeAuditRun: (audit: AuditResponse) => void
   failAuditRun: (message: string) => void
   setSelectedFindingId: (value: string | null) => void
+  appendFindings: (newFindings: Findings[]) => void
 }
 
 export const useAuditStore = create<AuditStoreState>((set) => ({
@@ -192,4 +193,14 @@ export const useAuditStore = create<AuditStoreState>((set) => ({
       }),
     })),
   setSelectedFindingId: (value) => set({ selectedFindingId: value }),
+  appendFindings: (newFindings) =>
+    set((state) => {
+      const existingIds = new Set(state.findings.map((f) => f.case_id))
+      const filtered = newFindings.filter((f) => f.case_id && !existingIds.has(f.case_id))
+      if (filtered.length === 0) return {}
+      return {
+        findings: [...state.findings, ...filtered],
+      }
+    }),
 }))
+

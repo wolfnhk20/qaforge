@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import secrets
+import hmac
+import hashlib
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -20,7 +26,16 @@ from api.service import (
     persist_audit_result,
     run_audit_pipeline,
 )
-from db.supabase import SupabaseConfigError, SupabasePersistenceError, save_logs
+from db.supabase import (
+    SupabaseConfigError,
+    SupabasePersistenceError,
+    save_logs,
+    get_webhook,
+    save_webhook,
+    update_webhook_status,
+    update_webhook_timestamps,
+    save_audit,
+)
 
 
 class AuditRequest(BaseModel):
@@ -33,6 +48,7 @@ class AuditRequest(BaseModel):
     base_commit: Optional[str] = None
     head_commit: Optional[str] = None
     branch: str = config.DEFAULT_BRANCH
+    base_url: Optional[str] = None
 
 
 class AuditResponse(BaseModel):
@@ -45,6 +61,15 @@ class AuditResponse(BaseModel):
     findings: List[Dict[str, Any]]
     report_markdown: str
     report_path: str
+    origin: Optional[str] = "manual"
+
+
+class WebhookActionRequest(BaseModel):
+    """Incoming payload for POST /repos/{owner}/{repo}/webhook."""
+
+    github_token: str
+    action: Literal["enable", "disable"]
+
 
 
 app = FastAPI(title="qa-engine API", version="0.2.0")
@@ -96,6 +121,7 @@ async def create_audit(request: AuditRequest) -> AuditResponse:
             pr_number=request.pr_number,
             base_commit=request.base_commit,
             head_commit=request.head_commit,
+            base_url=request.base_url,
         )
         payload = build_audit_response(final_state, request.repo)
         payload["audit_id"] = persist_audit_result(
@@ -135,6 +161,85 @@ async def create_audit(request: AuditRequest) -> AuditResponse:
         ) from exc
 
 
+@app.post("/audit/stream")
+async def stream_audit(request: AuditRequest):
+    """Trigger the LangGraph audit pipeline and stream progress logs and findings."""
+    if request.scope == "pr" and request.pr_number is None:
+        raise HTTPException(status_code=422, detail="`pr_number` is required when scope='pr'.")
+    if request.scope == "commit_range" and (not request.base_commit or not request.head_commit):
+        raise HTTPException(
+            status_code=422,
+            detail="`base_commit` and `head_commit` are required when scope='commit_range'.",
+        )
+
+    try:
+        from api.service import validate_repo
+        validate_repo(request.repo)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    queue = asyncio.Queue()
+
+    def emitter(event_type: str, data: Any):
+        queue.put_nowait({"type": event_type, "data": data})
+
+    async def run_pipeline_task():
+        from utils.trace import event_emitter
+        event_emitter.set(emitter)
+        try:
+            _save_log_best_effort(
+                "audit_requested",
+                payload={"repo": request.repo, "module": request.module, "scope": request.scope},
+            )
+            final_state = await run_audit_pipeline(
+                repo=request.repo,
+                module_path=request.module,
+                scope=request.scope,
+                branch=request.branch,
+                pr_number=request.pr_number,
+                base_commit=request.base_commit,
+                head_commit=request.head_commit,
+                base_url=request.base_url,
+            )
+            payload = build_audit_response(final_state, request.repo)
+            payload["audit_id"] = persist_audit_result(
+                repo=request.repo,
+                module_path=request.module,
+                audit_response=payload,
+            )
+            queue.put_nowait({"type": "complete", "data": payload})
+        except Exception as exc:
+            from api.service import AuditPipelineError
+            err_msg = str(exc)
+            errors = []
+            if isinstance(exc, AuditPipelineError):
+                err_msg = "Audit pipeline execution failed."
+                errors = exc.errors
+            queue.put_nowait({"type": "error", "data": {"message": err_msg, "errors": errors}})
+        finally:
+            queue.put_nowait(None)
+
+    asyncio.create_task(run_pipeline_task())
+
+    async def event_generator():
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+
 @app.get("/audit/latest", response_model=AuditResponse)
 async def get_latest_audit() -> AuditResponse:
     """Return the latest persisted audit report markdown and findings."""
@@ -155,3 +260,363 @@ async def get_latest_audit() -> AuditResponse:
             status_code=500,
             detail={"message": "Unexpected server error while reading latest audit.", "error": str(exc)},
         ) from exc
+
+
+@app.get("/audit/{audit_id}/logs")
+async def get_audit_logs(audit_id: int):
+    """Retrieve database logs for a given audit id."""
+    try:
+        from db.supabase import get_client
+        response = get_client().table("logs").select("*").eq("audit_id", audit_id).order("created_at", desc=False).execute()
+        return getattr(response, "data", None) or []
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch audit logs: {exc}")
+
+
+@app.get("/repos/{owner}/{repo}/webhook")
+async def get_repo_webhook(owner: str, repo: str):
+    """Get webhook configuration and status from Supabase."""
+    repo_name = f"{owner}/{repo}"
+    try:
+        webhook = get_webhook(repo_name)
+        if not webhook:
+            return {"enabled": False}
+        return {
+            "enabled": webhook.get("enabled", False),
+            "webhook_id": webhook.get("webhook_id"),
+            "created_at": webhook.get("created_at"),
+            "last_push_received": webhook.get("last_push_received"),
+            "last_auto_audit": webhook.get("last_auto_audit"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve webhook configuration: {exc}")
+
+
+@app.post("/repos/{owner}/{repo}/webhook")
+async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionRequest):
+    """Enable or disable GitHub webhooks for the given repository."""
+    repo_name = f"{owner}/{repo}"
+    github_token = request.github_token
+    action = request.action
+
+    from github import Github
+    from github.GithubException import GithubException, UnknownObjectException
+
+    try:
+        gh = Github(github_token)
+        gh_repo = gh.get_repo(repo_name)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Failed to authenticate with GitHub or repository '{repo_name}' is inaccessible: {exc}"
+        )
+
+    if action == "enable":
+        # Check if webhook exists in Supabase
+        webhook = get_webhook(repo_name)
+        
+        # If enabled in DB, check GitHub side
+        webhook_id = webhook.get("webhook_id") if webhook else None
+        webhook_secret = webhook.get("webhook_secret") if webhook else secrets.token_hex(20)
+
+        # Build webhook config
+        webhook_url = f"{config.WEBHOOK_URL_BASE.rstrip('/')}/webhook/github"
+        config_dict = {
+            "url": webhook_url,
+            "content_type": "json",
+            "secret": webhook_secret,
+        }
+
+        # Check if webhook already exists on GitHub to prevent duplicates
+        github_hook = None
+        if webhook_id:
+            try:
+                github_hook = gh_repo.get_hook(webhook_id)
+                if github_hook.config.get("url") != webhook_url:
+                    try:
+                        github_hook.delete()
+                    except Exception:
+                        pass
+                    github_hook = None
+            except UnknownObjectException:
+                github_hook = None
+
+        if not github_hook:
+            try:
+                hooks = gh_repo.get_hooks()
+                for h in hooks:
+                    if h.config.get("url") == webhook_url:
+                        github_hook = h
+                        webhook_id = h.id
+                        break
+            except Exception:
+                pass
+
+        if not github_hook:
+            try:
+                github_hook = gh_repo.create_hook(
+                    name="web",
+                    config=config_dict,
+                    events=["push"],
+                    active=True
+                )
+                webhook_id = github_hook.id
+            except GithubException as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to create GitHub webhook. Ensure you have admin access to the repository: {exc}"
+                )
+
+        try:
+            save_webhook(
+                repo=repo_name,
+                webhook_id=webhook_id,
+                webhook_secret=webhook_secret,
+                enabled=True
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save webhook configuration in database: {exc}"
+            )
+
+        return {
+            "status": "success",
+            "message": f"Webhook successfully enabled for {repo_name}",
+            "webhook_id": webhook_id,
+        }
+
+    else:  # action == "disable"
+        webhook = get_webhook(repo_name)
+        if not webhook or not webhook.get("enabled"):
+            return {"status": "success", "message": "Webhook is already disabled"}
+
+        webhook_id = webhook.get("webhook_id")
+        
+        if webhook_id:
+            try:
+                github_hook = gh_repo.get_hook(webhook_id)
+                github_hook.delete()
+            except UnknownObjectException:
+                pass
+            except Exception as exc:
+                print(f"Failed to delete hook from GitHub: {exc}")
+
+        try:
+            update_webhook_status(repo=repo_name, enabled=False)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to disable webhook configuration in database: {exc}"
+            )
+
+        return {
+            "status": "success",
+            "message": f"Webhook successfully disabled for {repo_name}",
+        }
+
+
+async def background_audit_runner(
+    repo: str,
+    branch: str,
+    base_commit: str,
+    head_commit: str,
+    audit_id: int
+):
+    """Background task to execute the audit pipeline for a webhook push event."""
+    from utils.trace import event_emitter
+    from db.supabase import save_logs, get_client
+    import asyncio
+
+    findings_lock = asyncio.Lock()
+    findings_list = []
+
+    def db_log_emitter(event_type: str, data: Any):
+        if event_type == "log":
+            try:
+                msg = data["message"]
+                level = "info"
+                if "error" in msg.lower():
+                    level = "error"
+                elif any(x in msg.lower() for x in ["done", "complete", "final answer"]):
+                    level = "success"
+
+                save_logs(
+                    message=msg,
+                    level=level,
+                    audit_id=audit_id,
+                    payload={"agent": data.get("agent")}
+                )
+            except Exception as e:
+                print("Failed to save background log:", e)
+        elif event_type == "findings":
+            async def update_findings():
+                async with findings_lock:
+                    findings_list.extend(data)
+                    try:
+                        get_client().table("audits").update({"findings": findings_list}).eq("id", audit_id).execute()
+                    except Exception as e:
+                        print("Failed to update findings in background:", e)
+            asyncio.create_task(update_findings())
+
+    event_emitter.set(db_log_emitter)
+
+    try:
+        from db.supabase import update_webhook_timestamps
+        from datetime import datetime, timezone
+        update_webhook_timestamps(repo=repo, last_auto_audit=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        print("Failed to update last_auto_audit timestamp:", e)
+
+    try:
+        is_new_branch = base_commit == "0000000000000000000000000000000000000000" or not base_commit
+        scope = "full_module" if is_new_branch else "commit_range"
+        
+        save_logs(
+            message=f"Starting Auto Audit. Scope: {scope} · Branch: {branch} · Head: {head_commit[:7] if head_commit else 'N/A'}",
+            level="info",
+            audit_id=audit_id
+        )
+
+        final_state = await run_audit_pipeline(
+            repo=repo,
+            module_path=".",
+            scope=scope,
+            branch=branch,
+            base_commit=None if is_new_branch else base_commit,
+            head_commit=None if is_new_branch else head_commit,
+            origin="github_push"
+        )
+
+        payload = build_audit_response(final_state, repo)
+
+        get_client().table("audits").update({
+            "status": "completed",
+            "probe_count": payload["probe_count"],
+            "findings": payload["findings"],
+            "report_markdown": payload["report_markdown"]
+        }).eq("id", audit_id).execute()
+
+        save_logs(
+            message="Auto Audit completed successfully.",
+            level="success",
+            audit_id=audit_id
+        )
+
+    except Exception as exc:
+        print(f"Auto Audit run failed: {exc}")
+        err_msg = str(exc)
+        try:
+            get_client().table("audits").update({
+                "status": "error",
+                "report_markdown": f"# Auto Audit Execution Failed\n\n{err_msg}"
+            }).eq("id", audit_id).execute()
+
+            save_logs(
+                message=f"Auto Audit execution failed: {err_msg}",
+                level="error",
+                audit_id=audit_id
+            )
+        except Exception as db_exc:
+            print(f"Failed to update error status in DB: {db_exc}")
+
+
+@app.post("/webhook/github")
+async def github_webhook_receiver(request: Request, background_tasks: BackgroundTasks):
+    """Handle incoming GitHub webhook events."""
+    event_type = request.headers.get("X-GitHub-Event")
+    if not event_type:
+        raise HTTPException(status_code=400, detail="X-GitHub-Event header missing")
+
+    if event_type == "ping":
+        return {"status": "pong"}
+
+    if event_type != "push":
+        raise HTTPException(status_code=400, detail=f"Unsupported event type: {event_type}")
+
+    body_bytes = await request.body()
+    try:
+        payload = json.loads(body_bytes)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    repo_name = payload.get("repository", {}).get("full_name")
+    if not repo_name:
+        raise HTTPException(status_code=400, detail="Repository full name missing from payload")
+
+    webhook = get_webhook(repo_name)
+    if not webhook or not webhook.get("enabled"):
+        raise HTTPException(status_code=404, detail="Webhook not configured or disabled for this repository")
+
+    webhook_secret = webhook.get("webhook_secret")
+
+    signature_header = request.headers.get("X-Hub-Signature-256")
+    if not signature_header or not signature_header.startswith("sha256="):
+        raise HTTPException(status_code=401, detail="X-Hub-Signature-256 header missing or invalid")
+
+    expected_signature = signature_header[7:]
+    mac = hmac.new(
+        webhook_secret.encode("utf-8"),
+        msg=body_bytes,
+        digestmod=hashlib.sha256
+    )
+    computed_signature = mac.hexdigest()
+
+    if not hmac.compare_digest(expected_signature, computed_signature):
+        raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
+    ref = payload.get("ref", "")
+    if not ref.startswith("refs/heads/"):
+        return {"status": "ignored", "reason": "Not a branch push event"}
+
+    branch = ref.replace("refs/heads/", "")
+    head_commit = payload.get("after")
+    base_commit = payload.get("before")
+
+    try:
+        from datetime import datetime, timezone
+        update_webhook_timestamps(repo=repo_name, last_push_received=datetime.now(timezone.utc).isoformat())
+    except Exception as e:
+        print("Failed to update last_push_received timestamp:", e)
+
+    try:
+        record = save_audit(
+            repo=repo_name,
+            module=".",
+            status="running",
+            probe_count=0,
+            findings=[],
+            report_markdown="",
+            origin="github_push"
+        )
+        audit_id = record.get("id")
+        if not audit_id:
+            raise SupabasePersistenceError("Audit record did not return an id")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize audit record: {exc}")
+
+    try:
+        save_logs(
+            message="Auto Audit triggered by Git Push.",
+            level="info",
+            audit_id=audit_id
+        )
+    except Exception:
+        pass
+
+    background_tasks.add_task(
+        background_audit_runner,
+        repo=repo_name,
+        branch=branch,
+        base_commit=base_commit,
+        head_commit=head_commit,
+        audit_id=audit_id
+    )
+
+    return {
+        "status": "triggered",
+        "audit_id": audit_id,
+        "repo": repo_name,
+        "branch": branch,
+    }
+
