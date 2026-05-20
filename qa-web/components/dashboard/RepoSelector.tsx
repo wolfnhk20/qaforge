@@ -1,148 +1,96 @@
 'use client'
 
-import { CheckCircle2, Clock3, Github, ShieldAlert } from 'lucide-react'
+import { useState } from 'react'
+import { GitBranch, GitFork, Search } from 'lucide-react'
 
-import { useHealth } from '@/hooks/useHealth'
-import { cn, getHealthTone } from '@/lib/utils'
-import { useAuditStore } from '@/store/auditStore'
+import { useAudit } from '@/hooks/useAudit'
+import { cn } from '@/lib/utils'
+
+// Placeholder repos — replaced by GitHub OAuth dynamic fetch in Phase 3
+const MOCK_REPOS = [
+  { fullName: 'openai/openai-python', branch: 'main', stars: '21k', lang: 'Python' },
+  { fullName: 'vercel/next.js',        branch: 'canary', stars: '124k', lang: 'TypeScript' },
+  { fullName: 'supabase/supabase',     branch: 'master', stars: '74k', lang: 'TypeScript' },
+  { fullName: 'langchain-ai/langchain', branch: 'master', stars: '93k', lang: 'Python' },
+]
 
 export default function RepoSelector() {
-  const { repoDraft, setRepoDraft } = useAuditStore()
-  const healthQuery = useHealth()
-  const health = healthQuery.data
+  const { repoDraft } = useAudit()
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const filtered = MOCK_REPOS.filter(r =>
+    r.fullName.toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
-    <section className="rounded-[28px] border border-white/8 bg-slate-950/70 p-6 shadow-panel">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.28em] text-faint">Audit target</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            Connect the next repository run
-          </h2>
-          <p className="mt-2 max-w-xl text-sm leading-7 text-muted">
-            The frontend stays presentation-only. Repository analysis, persistence, and agent
-            orchestration remain owned by FastAPI and LangGraph.
-          </p>
+    <section className="border border-border rounded bg-surface">
+      <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <GitFork className="w-3.5 h-3.5 text-faint" />
+          <h2 className="font-medium text-[13px] text-ink">Repository</h2>
         </div>
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className="text-[11px] text-accent-blue hover:text-ink transition-colors font-mono"
+        >
+          {open ? 'collapse' : 'browse'}
+        </button>
+      </div>
 
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-          <div className="flex items-center gap-3">
-            {healthQuery.isLoading ? (
-              <Clock3 className="h-4 w-4 text-amber-200" />
-            ) : health?.status === 'ok' ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-            ) : (
-              <ShieldAlert className="h-4 w-4 text-rose-300" />
-            )}
-            <div>
-              <p className={cn('text-sm font-medium', getHealthTone(health?.status || 'offline'))}>
-                {health?.status === 'ok'
-                  ? 'Backend healthy'
-                  : healthQuery.isLoading
-                    ? 'Checking backend'
-                    : 'Backend unavailable'}
-              </p>
-              <p className="text-xs text-faint">
-                {health?.latencyMs ? `${health.latencyMs}ms` : 'No latency yet'}
-              </p>
+      {/* Current selection */}
+      <div className="px-5 py-3 flex items-center gap-3 border-b border-border">
+        <div className="w-7 h-7 rounded bg-s3 border border-border flex items-center justify-center flex-shrink-0">
+          <GitBranch className="w-3.5 h-3.5 text-muted" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium text-ink truncate">{repoDraft.fullName}</p>
+          <p className="text-[11px] font-mono text-faint mt-0.5">{repoDraft.branch} · {repoDraft.module} · {repoDraft.scope}</p>
+        </div>
+        <div className="flex-shrink-0 w-2 h-2 rounded-full bg-accent-green" />
+      </div>
+
+      {/* Expandable browser */}
+      {open && (
+        <div className="border-b border-border">
+          <div className="px-4 py-2.5 border-b border-border">
+            <div className="flex items-center gap-2 bg-s2 rounded border border-border px-2.5 py-1.5">
+              <Search className="w-3 h-3 text-faint flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Filter repositories…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="bg-transparent text-[12px] text-ink placeholder:text-faint outline-none w-full"
+              />
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-4 md:grid-cols-2">
-        <label className="space-y-2">
-          <span className="text-xs uppercase tracking-[0.24em] text-faint">
-            Repository
-          </span>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-            <Github className="h-4 w-4 text-sky-200" />
-            <input
-              value={repoDraft.fullName}
-              onChange={(event) => setRepoDraft({ fullName: event.target.value })}
-              placeholder="owner/repo"
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-faint"
-            />
+          <div className="max-h-48 overflow-y-auto">
+            {filtered.map(repo => (
+              <button
+                key={repo.fullName}
+                type="button"
+                className={cn(
+                  'w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-s2 transition-colors border-b border-border/30',
+                  repoDraft.fullName === repo.fullName && 'bg-accent-blue/5'
+                )}
+              >
+                <div>
+                  <p className="text-[12px] text-ink font-mono">{repo.fullName}</p>
+                  <p className="text-[11px] text-faint mt-0.5">{repo.branch} · {repo.lang}</p>
+                </div>
+                <span className="text-[11px] text-faint font-mono">★ {repo.stars}</span>
+              </button>
+            ))}
           </div>
-        </label>
-
-        <label className="space-y-2">
-          <span className="text-xs uppercase tracking-[0.24em] text-faint">Module</span>
-          <input
-            value={repoDraft.module}
-            onChange={(event) => setRepoDraft({ module: event.target.value })}
-            placeholder="."
-            className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-faint"
-          />
-        </label>
-
-        <label className="space-y-2">
-          <span className="text-xs uppercase tracking-[0.24em] text-faint">Branch</span>
-          <input
-            value={repoDraft.branch}
-            onChange={(event) => setRepoDraft({ branch: event.target.value })}
-            placeholder="main"
-            className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-faint"
-          />
-        </label>
-
-        <label className="space-y-2">
-          <span className="text-xs uppercase tracking-[0.24em] text-faint">Scope</span>
-          <select
-            value={repoDraft.scope}
-            onChange={(event) =>
-              setRepoDraft({
-                scope: event.target.value as typeof repoDraft.scope,
-              })
-            }
-            className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none"
-          >
-            <option value="full_module">Full module</option>
-            <option value="pr">Pull request</option>
-            <option value="commit_range">Commit range</option>
-          </select>
-        </label>
-      </div>
-
-      {repoDraft.scope === 'pr' ? (
-        <div className="mt-4">
-          <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.24em] text-faint">PR number</span>
-            <input
-              type="number"
-              min={1}
-              value={repoDraft.prNumber ?? ''}
-              onChange={(event) =>
-                setRepoDraft({
-                  prNumber: event.target.value ? Number(event.target.value) : undefined,
-                })
-              }
-              className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-faint"
-            />
-          </label>
+          <div className="px-4 py-2.5">
+            <p className="text-[11px] text-faint font-mono">
+              Connect GitHub OAuth in Settings → to load your real repositories
+            </p>
+          </div>
         </div>
-      ) : null}
-
-      {repoDraft.scope === 'commit_range' ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.24em] text-faint">Base commit</span>
-            <input
-              value={repoDraft.baseCommit ?? ''}
-              onChange={(event) => setRepoDraft({ baseCommit: event.target.value || undefined })}
-              className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-faint"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="text-xs uppercase tracking-[0.24em] text-faint">Head commit</span>
-            <input
-              value={repoDraft.headCommit ?? ''}
-              onChange={(event) => setRepoDraft({ headCommit: event.target.value || undefined })}
-              className="w-full rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none placeholder:text-faint"
-            />
-          </label>
-        </div>
-      ) : null}
+      )}
     </section>
   )
 }

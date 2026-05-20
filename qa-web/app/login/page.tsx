@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Github } from 'lucide-react'
+import { ArrowRight, Cpu, Github } from 'lucide-react'
 
 import { useAuth } from '@/lib/auth'
 
@@ -19,112 +19,113 @@ export default function LoginPage() {
   }, [isAuthenticated, isLoading, router])
 
   return (
-    <main className="min-h-screen bg-bg px-6 py-10 text-ink lg:px-10">
-      <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-        <section className="rounded-[28px] border border-white/10 bg-white/[0.03] p-8 shadow-panel">
-          <p className="text-xs uppercase tracking-[0.34em] text-sky-200/70">
-            Authentication
-          </p>
-          <h1 className="mt-5 text-4xl font-semibold text-white">
-            Connect GitHub through Supabase Auth.
-          </h1>
-          <p className="mt-4 max-w-xl text-base leading-7 text-muted">
-            Use GitHub OAuth to protect the dashboard, persist sessions, and keep the frontend
-            aligned with the product surface that will eventually gate repository-triggered audits.
-          </p>
+    <main className="min-h-screen bg-bg flex items-center justify-center px-4">
+      {/* Background grid */}
+      <div className="absolute inset-0 opacity-[0.025] pointer-events-none"
+        style={{
+          backgroundImage: 'linear-gradient(var(--text) 1px, transparent 1px), linear-gradient(90deg, var(--text) 1px, transparent 1px)',
+          backgroundSize: '40px 40px'
+        }}
+      />
 
-          <div className="mt-8 rounded-2xl border border-white/10 bg-slate-950/70 p-5">
-            <p className="text-sm font-medium text-white">Session model</p>
-            <div className="mt-4 space-y-3 text-sm text-muted">
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                GitHub OAuth redirect via Supabase PKCE
-              </div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                Client session persisted locally and refreshed on boot
-              </div>
-              <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                Protected dashboard routes with logout support
-              </div>
+      <div className="relative w-full max-w-5xl grid gap-6 lg:grid-cols-2">
+        {/* Left: product context */}
+        <div className="lg:pr-6 lg:border-r lg:border-border flex flex-col justify-center">
+          <div className="flex items-center gap-2 mb-6">
+            <div className="w-7 h-7 rounded bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center">
+              <Cpu className="w-4 h-4 text-accent-blue" />
             </div>
+            <span className="font-mono text-[12px] tracking-widest text-accent-blue uppercase">QAForge</span>
           </div>
 
-          <div className="mt-8 flex items-center gap-4 text-sm text-faint">
-            <Link href="/" className="transition hover:text-white">
-              Back to landing page
+          <h1 className="text-[28px] font-semibold text-ink leading-tight mb-3">
+            AI-native software quality infrastructure
+          </h1>
+          <p className="text-[13px] text-faint leading-relaxed mb-8 max-w-md">
+            Autonomous code audits. Behavioral validation. Runtime probe execution.
+            Connect GitHub OAuth to access the control plane.
+          </p>
+
+          <div className="space-y-2">
+            {[
+              'GitHub OAuth via Supabase PKCE',
+              'Client session persisted and auto-refreshed',
+              'Protected dashboard routes',
+            ].map(item => (
+              <div key={item} className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-accent-green flex-shrink-0" />
+                <span className="text-[12px] text-muted font-mono">{item}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 pt-8 border-t border-border flex items-center gap-4">
+            <Link href="/" className="text-[12px] text-faint hover:text-muted transition-colors">
+              ← Landing page
             </Link>
             <button
               type="button"
-              onClick={() => {
-                signInMock()
-                router.replace('/dashboard')
-              }}
-              className="transition hover:text-white"
+              onClick={() => { signInMock(); router.replace('/dashboard') }}
+              className="text-[12px] text-faint hover:text-accent-blue transition-colors"
             >
-              Try dashboard anyway
+              Try dashboard (mock session)
             </button>
           </div>
-        </section>
+        </div>
 
-        <section className="rounded-[28px] border border-white/10 bg-slate-950/80 p-8 shadow-panel">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-white">Operator access</p>
-              <p className="mt-1 text-sm text-muted">
-                Sign in to unlock protected product routes.
-              </p>
-            </div>
-            <div className="rounded-full border border-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-faint">
-              OAuth
-            </div>
-          </div>
-
-          <div className="mt-10 rounded-2xl border border-white/8 bg-white/[0.03] p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-400/15 text-sky-200">
-                <Github className="h-5 w-5" />
-              </div>
+        {/* Right: sign-in */}
+        <div className="lg:pl-6 flex flex-col justify-center">
+          <div className="border border-border rounded bg-surface p-6">
+            <div className="flex items-center justify-between mb-6">
               <div>
-                <p className="text-sm font-medium text-white">GitHub via Supabase</p>
-                <p className="text-sm text-muted">
-                  Configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-                </p>
+                <p className="text-[14px] font-medium text-ink">Operator access</p>
+                <p className="text-[12px] text-faint mt-0.5">Sign in to unlock the dashboard</p>
               </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-border text-faint">OAuth</span>
             </div>
 
-            <button
-              type="button"
-              onClick={async () => {
-                setErrorMessage(null)
-                try {
-                  await signInWithGitHub()
-                } catch (error) {
-                  setErrorMessage(
-                    error instanceof Error ? error.message : 'Unable to begin GitHub sign-in.',
-                  )
-                }
-              }}
-              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-70"
-              disabled={isLoading}
-            >
-              <span>Continue with GitHub</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="border border-border rounded p-4 mb-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded bg-s2 border border-border flex items-center justify-center">
+                  <Github className="w-4 h-4 text-muted" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium text-ink">GitHub via Supabase</p>
+                  <p className="text-[11px] text-faint font-mono">NEXT_PUBLIC_SUPABASE_URL required</p>
+                </div>
+              </div>
 
-            {errorMessage ? (
-              <p className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {errorMessage}
-              </p>
-            ) : null}
+              <button
+                type="button"
+                onClick={async () => {
+                  setErrorMessage(null)
+                  try {
+                    await signInWithGitHub()
+                  } catch (err) {
+                    setErrorMessage(err instanceof Error ? err.message : 'Unable to begin sign-in.')
+                  }
+                }}
+                disabled={isLoading}
+                className="w-full flex items-center justify-center gap-2 h-9 rounded bg-ink text-bg text-[13px] font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Continue with GitHub</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-            <div className="mt-6 rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-muted">
-              {session?.user?.email ? (
-                <span>Signed in as {session.user.email}</span>
-              ) : (
-                <span>No active session detected in this browser.</span>
-              )}
+            {errorMessage && (
+              <div className="rounded border border-accent-red/20 bg-accent-red/8 px-3 py-2.5 mb-3">
+                <p className="text-[12px] text-accent-red">{errorMessage}</p>
+              </div>
+            )}
+
+            <div className="text-[11px] font-mono text-faint">
+              {session?.user?.email
+                ? `Session: ${session.user.email}`
+                : 'No active session detected'}
             </div>
           </div>
-        </section>
+        </div>
       </div>
     </main>
   )

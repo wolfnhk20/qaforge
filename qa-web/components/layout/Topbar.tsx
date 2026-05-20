@@ -1,80 +1,88 @@
 'use client'
 
-import { LogOut, Menu, ShieldCheck } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
+import { Menu, RefreshCw, Terminal } from 'lucide-react'
 
-import { useAuth } from '@/lib/auth'
-import { formatShortDate } from '@/lib/utils'
-import { useAuditStore } from '@/store/auditStore'
+import { useAudit } from '@/hooks/useAudit'
+import { useHealth } from '@/hooks/useHealth'
+import { cn } from '@/lib/utils'
 
-const pageLabels: Record<string, string> = {
-  '/dashboard': 'Audit command center',
-  '/audits': 'Audit execution',
-  '/findings': 'Findings explorer',
-  '/reports': 'Report intelligence',
-  '/settings': 'Platform settings',
-}
-
-export default function Topbar({
-  onMenuClick,
-}: {
-  onMenuClick: () => void
-}) {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { session, signOut } = useAuth()
-  const repoDraft = useAuditStore((state) => state.repoDraft)
-  const lastCompletedAt = useAuditStore((state) => state.lastCompletedAt)
+export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
+  const { phase, latestAudit, latestAuditQuery } = useAudit()
+  const { healthStatus } = useHealth()
 
   return (
-    <header className="sticky top-0 z-20 border-b border-white/8 bg-bg/85 backdrop-blur">
-      <div className="flex items-center gap-3 px-4 py-4 lg:px-6">
+    <header className="h-[48px] flex items-center justify-between border-b border-border bg-surface px-4 gap-4">
+      {/* Left: hamburger + breadcrumb */}
+      <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={onMenuClick}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03] text-slate-100 transition hover:bg-white/[0.06] lg:hidden"
+          className="lg:hidden p-1 text-faint hover:text-ink transition-colors"
         >
-          <Menu className="h-5 w-5" />
+          <Menu className="w-4 h-4" />
         </button>
+        <div className="flex items-center gap-2 font-mono text-[11px]">
+          <span className="text-faint">qaforge</span>
+          <span className="text-border">/</span>
+          <span className="text-muted">control-plane</span>
+        </div>
+      </div>
 
-        <div className="min-w-0 flex-1">
-          <p className="text-xs uppercase tracking-[0.28em] text-faint">Control plane</p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 className="truncate text-lg font-semibold text-white">
-              {pageLabels[pathname] || 'QAForge'}
-            </h2>
-            <span className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-muted">
-              {repoDraft.fullName}
-            </span>
-            {lastCompletedAt ? (
-              <span className="text-xs text-faint">
-                Last completed {formatShortDate(lastCompletedAt)}
+      {/* Right: status indicators */}
+      <div className="flex items-center gap-3">
+        {/* Audit phase pill */}
+        {phase !== 'idle' && (
+          <div className={cn(
+            'flex items-center gap-1.5 rounded px-2.5 py-1 border text-[11px] font-mono',
+            phase === 'running'   ? 'bg-accent-blue/8 border-accent-blue/25 text-accent-blue' :
+            phase === 'completed' ? 'bg-accent-green/8 border-accent-green/25 text-accent-green' :
+            phase === 'error'     ? 'bg-accent-red/8 border-accent-red/25 text-accent-red' :
+                                    'bg-s2 border-border text-faint'
+          )}>
+            {phase === 'running' && (
+              <span className="flex gap-0.5">
+                {[0,1,2].map(i => (
+                  <span key={i} className="w-0.5 h-2.5 rounded-full bg-accent-blue animate-[dot-blink_1.2s_ease-in-out_infinite]"
+                    style={{ animationDelay: `${i * 0.2}s` }} />
+                ))}
               </span>
-            ) : null}
+            )}
+            {phase === 'running'   ? 'AUDIT RUNNING' :
+             phase === 'completed' ? 'COMPLETED' :
+             phase === 'error'     ? 'FAILED' :
+             phase.toUpperCase()}
           </div>
-        </div>
+        )}
 
-        <div className="hidden items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 lg:flex">
-          <ShieldCheck className="h-4 w-4 text-emerald-300" />
-          <div className="text-right">
-            <p className="text-sm font-medium text-white">
-              {session?.user?.full_name || session?.user?.email || 'Protected session'}
-            </p>
-            <p className="text-xs text-muted">Supabase-authenticated operator</p>
+        {/* Repo context */}
+        {latestAudit?.repo && (
+          <div className="hidden sm:flex items-center gap-1.5 font-mono text-[11px] text-faint">
+            <Terminal className="w-3 h-3" />
+            <span className="text-muted">{latestAudit.repo}</span>
           </div>
-        </div>
+        )}
 
+        {/* Sync */}
         <button
           type="button"
-          onClick={async () => {
-            await signOut()
-            router.replace('/login')
-          }}
-          className="inline-flex h-11 items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 text-sm text-slate-100 transition hover:bg-white/[0.06]"
+          onClick={() => void latestAuditQuery.refetch()}
+          className="p-1.5 text-faint hover:text-ink transition-colors rounded hover:bg-s2"
+          title="Sync latest"
         >
-          <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Logout</span>
+          <RefreshCw className={cn('w-3.5 h-3.5', latestAuditQuery.isFetching && 'animate-spin')} />
         </button>
+
+        {/* Health dot */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn('w-1.5 h-1.5 rounded-full',
+            healthStatus?.status === 'ok'
+              ? 'bg-accent-green shadow-[0_0_6px_rgba(46,200,154,0.6)]'
+              : 'bg-accent-red shadow-[0_0_6px_rgba(245,101,101,0.6)]'
+          )} />
+          <span className="text-[11px] font-mono text-faint hidden md:block">
+            {healthStatus?.status === 'ok' ? 'ok' : 'err'}
+          </span>
+        </div>
       </div>
     </header>
   )

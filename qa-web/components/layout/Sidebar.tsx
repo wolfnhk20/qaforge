@@ -2,38 +2,38 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Activity, FileText, Gauge, Radar, Settings2 } from 'lucide-react'
+import { Activity, BookOpen, Cpu, Gauge, GitBranch, Settings2, Shield } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useHealth } from '@/hooks/useHealth'
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: Gauge },
-  { href: '/audits', label: 'Audits', icon: Activity },
-  { href: '/findings', label: 'Findings', icon: Radar },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/settings', label: 'Settings', icon: Settings2 },
+  { href: '/dashboard', label: 'Dashboard',  sub: 'Launch & monitor',  icon: Gauge },
+  { href: '/audits',    label: 'Audits',      sub: 'Execution history',  icon: Activity },
+  { href: '/findings',  label: 'Findings',    sub: 'Behavioral gaps',    icon: Shield },
+  { href: '/reports',   label: 'Reports',     sub: 'Narrative output',   icon: BookOpen },
+  { href: '/settings',  label: 'Settings',    sub: 'Config & access',    icon: Settings2 },
 ]
 
-export default function Sidebar({
-  onNavigate,
-}: {
-  onNavigate?: () => void
-}) {
+export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
+  const { healthStatus } = useHealth()
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-white/8 bg-slate-950/85 px-4 py-5 backdrop-blur">
-      <div className="rounded-3xl border border-white/8 bg-white/[0.03] px-4 py-4">
-        <p className="text-xs uppercase tracking-[0.34em] text-sky-200/80">QAForge</p>
-        <h1 className="mt-3 text-lg font-semibold text-white">
-          Quality infrastructure control plane
-        </h1>
-        <p className="mt-2 text-sm text-muted">
-          Trigger audits, observe execution, and ship report-driven remediation.
-        </p>
+    <aside className="flex h-full w-full flex-col bg-surface border-r border-border">
+      {/* Logo / Brand */}
+      <div className="px-5 py-5 border-b border-border">
+        <div className="flex items-center gap-2.5 mb-0.5">
+          <div className="w-6 h-6 rounded bg-accent-blue/15 border border-accent-blue/30 flex items-center justify-center flex-shrink-0">
+            <Cpu className="w-3.5 h-3.5 text-accent-blue" />
+          </div>
+          <span className="text-[11px] font-mono font-medium tracking-[0.18em] text-accent-blue uppercase">QAForge</span>
+        </div>
+        <p className="text-[11px] text-faint mt-1 pl-8 font-mono">v0.2.0 · engine</p>
       </div>
 
-      <nav className="mt-6 space-y-2">
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href
@@ -43,48 +43,61 @@ export default function Sidebar({
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                'group flex items-center gap-3 rounded-2xl border px-3 py-3 text-sm transition',
+                'group flex items-center gap-3 rounded px-3 py-2.5 text-sm transition-all duration-150',
                 isActive
-                  ? 'border-sky-400/30 bg-sky-400/10 text-white'
-                  : 'border-transparent bg-transparent text-muted hover:border-white/8 hover:bg-white/[0.03] hover:text-white',
+                  ? 'bg-accent-blue/10 border border-accent-blue/20 text-ink'
+                  : 'border border-transparent text-muted hover:bg-s2 hover:border-border hover:text-ink',
               )}
             >
-              <div
-                className={cn(
-                  'flex h-9 w-9 items-center justify-center rounded-xl transition',
-                  isActive
-                    ? 'bg-sky-400/20 text-sky-100'
-                    : 'bg-white/[0.03] text-faint group-hover:text-slate-100',
-                )}
-              >
-                <Icon className="h-4 w-4" />
+              <Icon className={cn('w-4 h-4 flex-shrink-0 transition-colors',
+                isActive ? 'text-accent-blue' : 'text-faint group-hover:text-muted'
+              )} />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-[13px] leading-tight">{item.label}</p>
+                <p className="text-[11px] text-faint mt-0.5">{item.sub}</p>
               </div>
-              <div>
-                <p className="font-medium">{item.label}</p>
-                <p className="text-xs text-faint">
-                  {item.label === 'Dashboard'
-                    ? 'Launch and review'
-                    : item.label === 'Audits'
-                      ? 'Execution timeline'
-                      : item.label === 'Findings'
-                        ? 'Operational gaps'
-                        : item.label === 'Reports'
-                          ? 'Narrative output'
-                          : 'Access and config'}
-                </p>
-              </div>
+              {isActive && (
+                <div className="w-1 h-1 rounded-full bg-accent-blue flex-shrink-0" />
+              )}
             </Link>
           )
         })}
       </nav>
 
-      <div className="mt-auto rounded-3xl border border-white/8 bg-gradient-to-br from-sky-400/10 to-white/[0.02] px-4 py-4">
-        <p className="text-xs uppercase tracking-[0.28em] text-sky-100/80">
-          Product posture
-        </p>
-        <p className="mt-3 text-sm text-slate-200">
-          Premium execution UX for backend intelligence you can trust.
-        </p>
+      {/* Engine status */}
+      <div className="px-3 py-4 border-t border-border">
+        <div className="rounded bg-s2 border border-border px-3 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-mono text-faint uppercase tracking-widest">Engine</span>
+            <div className="flex items-center gap-1.5">
+              <div className={cn('w-1.5 h-1.5 rounded-full',
+                healthStatus?.status === 'ok' ? 'bg-accent-green' : 'bg-accent-red'
+              )} />
+              <span className={cn('text-[11px] font-mono',
+                healthStatus?.status === 'ok' ? 'text-accent-green' : 'text-accent-red'
+              )}>
+                {healthStatus?.status === 'ok' ? 'ONLINE' : 'OFFLINE'}
+              </span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            {[
+              ['FastAPI', 'ready'],
+              ['LangGraph', '5 agents'],
+              ['Supabase', 'active'],
+            ].map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between">
+                <span className="text-[11px] text-faint font-mono">{k}</span>
+                <span className="text-[11px] text-muted font-mono">{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 px-1">
+          <GitBranch className="w-3 h-3 text-faint" />
+          <span className="text-[11px] text-faint font-mono">main · GitHub OAuth ready</span>
+        </div>
       </div>
     </aside>
   )

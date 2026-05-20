@@ -1,151 +1,159 @@
 'use client'
 
-import { createElement, useEffect, useMemo, useRef } from 'react'
+import { createElement, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { FileText } from 'lucide-react'
+import { BookOpen, Copy, Check, FileText } from 'lucide-react'
 
 import { useAudit } from '@/hooks/useAudit'
-import {
-  extractMarkdownHeadings,
-  simpleHighlightCode,
-  slugify,
-} from '@/lib/utils'
+import { extractMarkdownHeadings, simpleHighlightCode, slugify } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 function createHeading(level: 'h1' | 'h2' | 'h3') {
-  return function HeadingRenderer({
-    children,
-  }: {
-    children?: React.ReactNode
-  }) {
+  return function HeadingRenderer({ children }: { children?: React.ReactNode }) {
     const text = Array.isArray(children)
-      ? children.map((child) => (typeof child === 'string' ? child : '')).join('')
-      : typeof children === 'string'
-        ? children
-        : ''
+      ? children.map(c => (typeof c === 'string' ? c : '')).join('')
+      : typeof children === 'string' ? children : ''
     const id = slugify(text || `${level}-section`)
-
-    return createElement(
-      level,
-      {
-        id,
-        className: 'scroll-mt-28',
-      },
-      children,
-    )
+    return createElement(level, { id, className: 'scroll-mt-24' }, children)
   }
 }
 
-export default function ReportViewer({
-  compact = false,
-  fullHeight = false,
-}: {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <button type="button" onClick={copy}
+      className="p-1.5 text-faint hover:text-muted transition-colors rounded"
+      title="Copy">
+      {copied ? <Check className="w-3 h-3 text-accent-green" /> : <Copy className="w-3 h-3" />}
+    </button>
+  )
+}
+
+export default function ReportViewer({ compact = false, fullHeight = false }: {
   compact?: boolean
   fullHeight?: boolean
 }) {
   const { reportMarkdown, selectedFinding, latestAudit } = useAudit()
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const [activeHeading, setActiveHeading] = useState<string>('')
 
-  const headings = useMemo(
-    () => extractMarkdownHeadings(reportMarkdown),
-    [reportMarkdown],
-  )
+  const headings = useMemo(() => extractMarkdownHeadings(reportMarkdown), [reportMarkdown])
 
   useEffect(() => {
     const handleJump = (event: Event) => {
       const detail = (event as CustomEvent<{ hints?: string[] }>).detail
       const hints = detail?.hints || []
       const container = containerRef.current
-
-      if (!container) {
-        return
-      }
-
+      if (!container) return
       const elements = Array.from(container.querySelectorAll<HTMLElement>('h1, h2, h3'))
-      const target = elements.find((element) =>
-        hints.some((hint) => element.textContent?.toLowerCase().includes(hint)),
+      const target = elements.find(el =>
+        hints.some(hint => el.textContent?.toLowerCase().includes(hint))
       )
-
       target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-
     window.addEventListener('qaforge-report-jump', handleJump)
     return () => window.removeEventListener('qaforge-report-jump', handleJump)
   }, [])
 
+  // Track active heading on scroll
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || headings.length === 0) return
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) setActiveHeading(entry.target.id)
+        })
+      },
+      { rootMargin: '-20% 0px -70% 0px' }
+    )
+    headings.forEach(h => {
+      const el = document.getElementById(h.id)
+      if (el) observer.observe(el)
+    })
+    return () => observer.disconnect()
+  }, [headings])
+
   if (!reportMarkdown.trim()) {
     return (
-      <section className="flex min-h-[420px] items-center justify-center rounded-[28px] border border-dashed border-white/10 bg-slate-950/70 p-6 text-center shadow-panel">
+      <section className="border border-dashed border-border rounded flex items-center justify-center py-20 text-center">
         <div>
-          <FileText className="mx-auto h-8 w-8 text-sky-200" />
-          <h2 className="mt-4 text-xl font-semibold text-white">No report loaded</h2>
-          <p className="mt-2 max-w-md text-sm leading-7 text-muted">
-            Trigger an audit or sync the latest backend snapshot to render the markdown report.
-          </p>
+          <FileText className="w-8 h-8 text-faint mx-auto mb-3" />
+          <p className="text-[13px] text-muted">No report loaded</p>
+          <p className="text-[12px] text-faint mt-1">Trigger an audit to render the markdown report</p>
         </div>
       </section>
     )
   }
 
   return (
-    <section className="rounded-[28px] border border-white/8 bg-slate-950/75 p-6 shadow-panel">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.28em] text-faint">Report intelligence</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            Markdown audit narrative
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-7 text-muted">
-            Canonical engineering output returned from the backend. Use the table of contents
-            or findings jump links to move through the report quickly.
-          </p>
+    <section className="border border-border rounded bg-surface">
+      {/* Header */}
+      <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-3.5 h-3.5 text-faint" />
+          <h2 className="font-medium text-[13px] text-ink">Audit Report</h2>
         </div>
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-muted">
-          {latestAudit?.repo || 'No repository context'}
+        <div className="flex items-center gap-3">
+          {latestAudit?.repo && (
+            <span className="text-[11px] font-mono text-faint hidden sm:block">{latestAudit.repo}</span>
+          )}
+          <CopyButton text={reportMarkdown} />
         </div>
       </div>
 
-      {selectedFinding ? (
-        <div className="mt-6 rounded-3xl border border-sky-500/20 bg-sky-500/10 p-4">
-          <p className="text-xs uppercase tracking-[0.24em] text-sky-100/80">
-            Selected finding
-          </p>
-          <p className="mt-2 text-sm font-medium text-white">
-            {selectedFinding.classification} · {selectedFinding.endpoint}
-          </p>
-          <p className="mt-2 text-sm leading-7 text-sky-50/85">{selectedFinding.reasoning}</p>
+      {/* Selected finding callout */}
+      {selectedFinding && (
+        <div className="mx-5 mt-4 rounded border border-accent-blue/20 bg-accent-blue/5 px-4 py-3">
+          <p className="text-[11px] font-mono text-faint uppercase tracking-widest mb-1">Selected Finding</p>
+          <p className="text-[12px] font-medium text-ink">{selectedFinding.classification} · {selectedFinding.endpoint}</p>
+          <p className="text-[12px] text-muted mt-1 leading-relaxed">{selectedFinding.reasoning}</p>
         </div>
-      ) : null}
+      )}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className={compact ? 'xl:order-2' : ''}>
-          <div className="sticky top-24 rounded-[24px] border border-white/8 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-faint">Contents</p>
-            <div className="mt-4 space-y-2">
-              {headings.map((heading) => (
-                <button
-                  key={heading.id}
-                  type="button"
-                  onClick={() =>
-                    document
-                      .getElementById(heading.id)
-                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                  }
-                  className="block w-full rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-white/[0.05]"
-                  style={{ paddingLeft: `${heading.level * 0.6}rem` }}
-                >
-                  {heading.title}
-                </button>
-              ))}
+      {/* Two-col layout: TOC + content */}
+      <div className="flex gap-0">
+        {/* TOC sidebar */}
+        {headings.length > 0 && (
+          <aside className="hidden xl:block w-[200px] flex-shrink-0 border-r border-border">
+            <div className="sticky top-[48px] p-4 overflow-y-auto max-h-[calc(100vh-100px)]">
+              <p className="text-[10px] font-mono text-faint uppercase tracking-widest mb-3">Contents</p>
+              <nav className="space-y-0.5">
+                {headings.map(h => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className={cn(
+                      'block w-full text-left py-1 px-2 rounded text-[11px] transition-colors leading-tight',
+                      h.level === 1 ? 'font-medium' : 'pl-4',
+                      activeHeading === h.id ? 'text-accent-blue bg-accent-blue/8' : 'text-faint hover:text-muted'
+                    )}
+                    style={{ paddingLeft: `${(h.level - 1) * 10 + 8}px` }}
+                  >
+                    {h.title}
+                  </button>
+                ))}
+              </nav>
             </div>
-          </div>
-        </aside>
+          </aside>
+        )}
 
+        {/* Markdown content */}
         <div
           ref={containerRef}
-          className={fullHeight ? 'max-h-[calc(100vh-220px)] overflow-y-auto pr-2' : 'pr-2'}
+          className={cn(
+            'flex-1 min-w-0 p-6',
+            fullHeight ? 'max-h-[calc(100vh-120px)] overflow-y-auto' : ''
+          )}
         >
-          <div className="report-prose rounded-[24px] border border-white/8 bg-white/[0.02] p-6">
+          <div className="report-prose">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
@@ -156,7 +164,6 @@ export default function ReportViewer({
                 a: ({ href, children }) => (
                   <a
                     href={href}
-                    className="text-sky-200 underline decoration-sky-400/40 underline-offset-4"
                     target={href?.startsWith('http') ? '_blank' : undefined}
                     rel={href?.startsWith('http') ? 'noreferrer' : undefined}
                   >
@@ -166,24 +173,18 @@ export default function ReportViewer({
                 code({ className, children, ...props }) {
                   const language = className?.replace('language-', '')
                   const value = String(children).replace(/\n$/, '')
-
-                  if (!className) {
-                    return <code {...props}>{children}</code>
-                  }
-
+                  if (!className) return <code {...props}>{children}</code>
                   return (
-                    <span className="block overflow-hidden rounded-xl border border-white/8 bg-[#06101d]">
-                      <span className="flex items-center justify-between border-b border-white/8 bg-white/[0.03] px-3 py-2 font-mono text-[11px] uppercase tracking-[0.24em] text-faint">
-                        <span>{language || 'code'}</span>
-                        <span>snippet</span>
+                    <span className="block overflow-hidden rounded border border-border bg-[#050a12] my-3">
+                      <span className="flex items-center justify-between border-b border-border bg-s2 px-3 py-1.5">
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-faint">{language || 'code'}</span>
+                        <CopyButton text={value} />
                       </span>
                       <pre className="m-0 overflow-x-auto p-0">
                         <code
                           {...props}
-                          className="block p-4"
-                          dangerouslySetInnerHTML={{
-                            __html: simpleHighlightCode(value, language),
-                          }}
+                          className="block p-4 font-mono text-[11px]"
+                          dangerouslySetInnerHTML={{ __html: simpleHighlightCode(value, language) }}
                         />
                       </pre>
                     </span>

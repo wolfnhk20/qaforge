@@ -1,87 +1,127 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
+import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react'
 
 import { useAudit } from '@/hooks/useAudit'
-import { formatClock, formatDuration, getStageTone } from '@/lib/utils'
+import { cn, formatClock, formatDuration } from '@/lib/utils'
+import type { PipelineStageStatus } from '@/types'
+
+const STAGE_ICONS: Record<string, string> = {
+  intent:    '01',
+  analysis:  '02',
+  design:    '03',
+  execution: '04',
+  report:    '05',
+}
+
+function StageStatusIcon({ status }: { status: PipelineStageStatus }) {
+  if (status === 'running')   return <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-blue" />
+  if (status === 'completed') return <CheckCircle2 className="w-3.5 h-3.5 text-accent-green" />
+  if (status === 'error')     return <XCircle className="w-3.5 h-3.5 text-accent-red" />
+  return <Circle className="w-3.5 h-3.5 text-faint" />
+}
+
+function stageBg(status: PipelineStageStatus) {
+  if (status === 'running')   return 'border-accent-blue/30 bg-accent-blue/5 stage-running'
+  if (status === 'completed') return 'border-accent-green/25 bg-accent-green/5'
+  if (status === 'error')     return 'border-accent-red/25 bg-accent-red/5'
+  return 'border-border bg-s2'
+}
+
+function stageText(status: PipelineStageStatus) {
+  if (status === 'running')   return 'text-accent-blue'
+  if (status === 'completed') return 'text-accent-green'
+  if (status === 'error')     return 'text-accent-red'
+  return 'text-faint'
+}
+
+function progressColor(status: PipelineStageStatus) {
+  if (status === 'running')   return 'bg-accent-blue'
+  if (status === 'completed') return 'bg-accent-green'
+  if (status === 'error')     return 'bg-accent-red'
+  return 'bg-border'
+}
 
 export default function PipelineView() {
   const { pipelineStages, phase } = useAudit()
 
   return (
-    <section className="rounded-[28px] border border-white/8 bg-slate-950/75 p-6 shadow-panel">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.28em] text-faint">Pipeline</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            Multi-agent execution pipeline
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-7 text-muted">
-            The frontend stages animate regardless of backend streaming support, then reconcile
-            against the final FastAPI response when the run completes.
-          </p>
-        </div>
-        <div className="rounded-full border border-white/8 bg-white/[0.03] px-4 py-2 text-xs uppercase tracking-[0.24em] text-slate-200">
-          {phase === 'running'
-            ? 'Execution live'
-            : phase === 'completed'
-              ? 'Execution settled'
-              : 'Awaiting run'}
+    <section className="border border-border rounded bg-surface">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4">
+        <h2 className="font-medium text-[13px] text-ink">Multi-Agent Pipeline</h2>
+        <div className={cn(
+          'text-[11px] font-mono px-2.5 py-0.5 rounded border',
+          phase === 'running'   ? 'border-accent-blue/30 text-accent-blue' :
+          phase === 'completed' ? 'border-accent-green/30 text-accent-green' :
+                                  'border-border text-faint'
+        )}>
+          {phase === 'running' ? 'EXECUTING' : phase === 'completed' ? 'SETTLED' : 'IDLE'}
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 xl:grid-cols-5">
-        {pipelineStages.map((stage, index) => (
-          <motion.article
-            key={stage.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.06 }}
-            className={`rounded-3xl border p-4 ${getStageTone(stage.status)}`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.24em] opacity-70">
-                  {stage.agent}
-                </p>
-                <h3 className="mt-2 text-base font-semibold">{stage.label}</h3>
-              </div>
-              {stage.status === 'running' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : stage.status === 'completed' ? (
-                <CheckCircle2 className="h-4 w-4" />
-              ) : stage.status === 'error' ? (
-                <XCircle className="h-4 w-4" />
-              ) : (
-                <div className="mt-1 h-2.5 w-2.5 rounded-full bg-white/25" />
-              )}
-            </div>
-
-            <p className="mt-4 text-sm leading-6 opacity-80">{stage.description}</p>
-
-            <div className="mt-5 h-2 overflow-hidden rounded-full bg-black/25">
+      {/* Pipeline stages */}
+      <div className="p-5">
+        {/* Connector line */}
+        <div className="relative">
+          <div className="absolute left-0 right-0 top-[18px] h-px bg-border z-0 hidden lg:block" />
+          <div className="grid gap-3 lg:grid-cols-5 relative z-10">
+            {pipelineStages.map((stage, index) => (
               <motion.div
-                className="h-full rounded-full bg-current"
-                initial={{ width: 0 }}
-                animate={{ width: `${stage.progress}%` }}
-                transition={{ duration: 0.45, ease: 'easeOut' }}
-              />
-            </div>
+                key={stage.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05, duration: 0.25 }}
+                className={cn('rounded border p-3 transition-all duration-300', stageBg(stage.status))}
+              >
+                {/* Stage number + icon */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] font-mono text-faint">{STAGE_ICONS[stage.id] ?? `0${index+1}`}</span>
+                  <StageStatusIcon status={stage.status} />
+                </div>
 
-            <div className="mt-4 space-y-1 text-xs opacity-75">
-              <p>Started: {formatClock(stage.startedAt)}</p>
-              <p>Completed: {formatClock(stage.completedAt)}</p>
-              <p>Duration: {formatDuration(stage.durationMs)}</p>
-            </div>
+                {/* Label */}
+                <p className={cn('text-[12px] font-medium leading-tight mb-1', stage.status !== 'pending' ? 'text-ink' : 'text-muted')}>
+                  {stage.label}
+                </p>
+                <p className="text-[11px] text-faint mb-3 leading-tight">{stage.agent}</p>
 
-            {stage.detail ? (
-              <div className="mt-4 rounded-2xl border border-white/8 bg-black/15 px-3 py-3 text-xs leading-6 opacity-90">
-                {stage.detail}
-              </div>
-            ) : null}
-          </motion.article>
-        ))}
+                {/* Progress bar */}
+                <div className="h-0.5 w-full bg-border/60 rounded-full overflow-hidden mb-3">
+                  <motion.div
+                    className={cn('h-full rounded-full', progressColor(stage.status))}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${stage.progress}%` }}
+                    transition={{ duration: 0.4, ease: 'easeOut' }}
+                  />
+                </div>
+
+                {/* Timestamps */}
+                <div className="space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-faint">start</span>
+                    <span className={cn('text-[10px] font-mono', stageText(stage.status))}>
+                      {formatClock(stage.startedAt)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-faint">dur</span>
+                    <span className="text-[10px] font-mono text-muted">
+                      {formatDuration(stage.durationMs)}
+                    </span>
+                  </div>
+                </div>
+
+                {stage.detail && (
+                  <p className="mt-2 text-[10px] font-mono text-faint border-t border-border/50 pt-2 truncate" title={stage.detail}>
+                    {stage.detail}
+                  </p>
+                )}
+              </motion.div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   )

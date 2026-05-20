@@ -1,122 +1,190 @@
 'use client'
 
-import { useMemo } from 'react'
-import { ArrowUpRight, Radar } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowUpRight, ChevronDown, ChevronRight, Filter, Search, Shield } from 'lucide-react'
 
 import { useAudit } from '@/hooks/useAudit'
-import {
-  buildFindingJumpHints,
-  cn,
-  getPriorityTone,
-  summarizeFindings,
-} from '@/lib/utils'
+import { buildFindingJumpHints, cn, getPriorityTone, summarizeFindings } from '@/lib/utils'
+import type { Findings } from '@/types'
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const tone = getPriorityTone(priority)
+  return (
+    <span className={cn('inline-flex items-center rounded px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider border', tone)}>
+      {priority}
+    </span>
+  )
+}
+
+function FindingRow({ finding, isSelected, onSelect }: {
+  finding: Findings
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <>
+      <tr
+        onClick={onSelect}
+        className={cn(
+          'cursor-pointer border-b border-border/50 transition-colors',
+          isSelected ? 'bg-accent-blue/5' : 'hover:bg-s2',
+        )}
+      >
+        <td className="px-4 py-2.5 w-8">
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
+            className="text-faint hover:text-muted transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+        </td>
+        <td className="px-4 py-2.5"><PriorityBadge priority={finding.priority} /></td>
+        <td className="px-4 py-2.5 font-mono text-[12px] text-accent-blue">{finding.endpoint || '—'}</td>
+        <td className="px-4 py-2.5 text-[12px] text-muted">{finding.classification}</td>
+        <td className="px-4 py-2.5 font-mono text-[11px] text-faint">{finding.case_id}</td>
+        <td className="px-4 py-2.5 max-w-[300px] text-[12px] text-faint truncate">{finding.reasoning}</td>
+        <td className="px-4 py-2.5 text-right">
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation()
+              window.dispatchEvent(new CustomEvent('qaforge-report-jump', {
+                detail: { hints: buildFindingJumpHints(finding), caseId: finding.case_id },
+              }))
+            }}
+            className="inline-flex items-center gap-1 text-[11px] text-faint hover:text-accent-blue transition-colors"
+          >
+            <ArrowUpRight className="w-3 h-3" />
+          </button>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-b border-border/50 bg-s2">
+          <td colSpan={7} className="px-4 py-3">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-[11px] font-mono text-faint uppercase tracking-widest mb-1">Reasoning</p>
+                <p className="text-[12px] text-muted leading-relaxed">{finding.reasoning}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-mono text-faint uppercase tracking-widest mb-1">Suggested Fix</p>
+                <p className="text-[12px] text-muted leading-relaxed">{finding.suggested_fix || 'No fix suggested.'}</p>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
 
 export default function FindingsTable({ compact = false }: { compact?: boolean }) {
   const { findings, selectedFindingId, setSelectedFindingId } = useAudit()
+  const [search, setSearch] = useState('')
+  const [filterPriority, setFilterPriority] = useState<string>('all')
+
   const summary = useMemo(() => summarizeFindings(findings), [findings])
-  const rows = compact ? findings.slice(0, 6) : findings
+
+  const filtered = useMemo(() => {
+    let rows = compact ? findings.slice(0, 8) : findings
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      rows = rows.filter(f =>
+        f.endpoint?.toLowerCase().includes(q) ||
+        f.classification?.toLowerCase().includes(q) ||
+        f.reasoning?.toLowerCase().includes(q)
+      )
+    }
+    if (filterPriority !== 'all') {
+      rows = rows.filter(f => f.priority.toLowerCase().includes(filterPriority))
+    }
+    return rows
+  }, [findings, compact, search, filterPriority])
 
   return (
-    <section className="rounded-[28px] border border-white/8 bg-white/[0.03] p-6 shadow-panel">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.28em] text-faint">Findings</p>
-          <h2 className="mt-3 text-2xl font-semibold text-white">
-            Behavioral gaps detected by probes
-          </h2>
+    <section className="border border-border rounded bg-surface">
+      {/* Header */}
+      <div className="px-5 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Shield className="w-3.5 h-3.5 text-faint" />
+          <h2 className="font-medium text-[13px] text-ink">Findings</h2>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-3 py-1 text-rose-200">
-            High {summary.high}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded border border-accent-red/25 text-accent-red">
+            HIGH {summary.high}
           </span>
-          <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-amber-200">
-            Medium {summary.medium}
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded border border-accent-amber/25 text-accent-amber">
+            MED {summary.medium}
           </span>
-          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-200">
-            Low {summary.low}
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded border border-accent-green/25 text-accent-green">
+            LOW {summary.low}
           </span>
         </div>
       </div>
 
-      {rows.length === 0 ? (
-        <div className="mt-6 flex min-h-[260px] flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-slate-950/60 text-center">
-          <Radar className="h-8 w-8 text-sky-200" />
-          <p className="mt-4 text-lg font-medium text-white">No findings yet</p>
-          <p className="mt-2 max-w-md text-sm leading-7 text-muted">
-            Run an audit or hydrate the latest backend snapshot to populate operational findings.
-          </p>
+      {/* Filters */}
+      {!compact && (
+        <div className="px-5 py-2.5 border-b border-border flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 bg-s2 border border-border rounded px-2.5 py-1.5 flex-1 min-w-[180px]">
+            <Search className="w-3 h-3 text-faint flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search findings…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="bg-transparent text-[12px] text-ink placeholder:text-faint outline-none w-full"
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <Filter className="w-3 h-3 text-faint" />
+            {['all','high','medium','low'].map(p => (
+              <button key={p} type="button"
+                onClick={() => setFilterPriority(p)}
+                className={cn('px-2.5 py-1 rounded text-[11px] font-mono transition-colors',
+                  filterPriority === p ? 'bg-s3 border border-border text-ink' : 'text-faint hover:text-muted'
+                )}>
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Shield className="w-8 h-8 text-faint mb-3" />
+          <p className="text-[13px] text-muted">No findings yet</p>
+          <p className="text-[12px] text-faint mt-1">Run an audit to detect behavioral gaps</p>
         </div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-[24px] border border-white/8">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-white/8">
-              <thead className="bg-slate-950/75 text-left text-[11px] uppercase tracking-[0.24em] text-faint">
-                <tr>
-                  <th className="px-4 py-3">Priority</th>
-                  <th className="px-4 py-3">Endpoint</th>
-                  <th className="px-4 py-3">Classification</th>
-                  <th className="px-4 py-3">Case</th>
-                  <th className="px-4 py-3">Reasoning</th>
-                  <th className="px-4 py-3 text-right">Jump</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/6 bg-white/[0.02]">
-                {rows.map((finding) => (
-                  <tr
-                    key={finding.case_id}
-                    className={cn(
-                      'cursor-pointer transition hover:bg-white/[0.04]',
-                      selectedFindingId === finding.case_id && 'bg-sky-400/10',
-                    )}
-                    onClick={() => setSelectedFindingId(finding.case_id)}
-                  >
-                    <td className="px-4 py-4 align-top">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em]',
-                          getPriorityTone(finding.priority),
-                        )}
-                      >
-                        {finding.priority}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 align-top text-sm text-white">
-                      {finding.endpoint || 'Unknown surface'}
-                    </td>
-                    <td className="px-4 py-4 align-top text-sm text-slate-200">
-                      {finding.classification}
-                    </td>
-                    <td className="px-4 py-4 align-top font-mono text-xs text-sky-100">
-                      {finding.case_id}
-                    </td>
-                    <td className="max-w-[380px] px-4 py-4 align-top text-sm leading-6 text-muted">
-                      {finding.reasoning}
-                    </td>
-                    <td className="px-4 py-4 align-top text-right">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          window.dispatchEvent(
-                            new CustomEvent('qaforge-report-jump', {
-                              detail: {
-                                hints: buildFindingJumpHints(finding),
-                                caseId: finding.case_id,
-                              },
-                            }),
-                          )
-                        }}
-                        className="inline-flex items-center gap-2 rounded-full border border-white/8 px-3 py-1 text-xs text-slate-100 transition hover:bg-white/[0.05]"
-                      >
-                        <span>Open</span>
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="w-8 px-4 py-2.5" />
+                <th className="px-4 py-2.5 text-left text-[10px] font-mono text-faint uppercase tracking-widest">Priority</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-mono text-faint uppercase tracking-widest">Endpoint</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-mono text-faint uppercase tracking-widest">Classification</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-mono text-faint uppercase tracking-widest">Case ID</th>
+                <th className="px-4 py-2.5 text-left text-[10px] font-mono text-faint uppercase tracking-widest">Reasoning</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(finding => (
+                <FindingRow
+                  key={finding.case_id}
+                  finding={finding}
+                  isSelected={selectedFindingId === finding.case_id}
+                  onSelect={() => setSelectedFindingId(finding.case_id)}
+                />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </section>

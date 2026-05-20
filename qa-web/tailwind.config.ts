@@ -10,44 +10,49 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: '#0B1020',
-        surface: '#121A2B',
-        elevated: '#182338',
-        border: '#25324A',
-        ink: '#F4F7FB',
-        muted: '#9FB0C7',
-        faint: '#5A7290',
+        bg:      '#080D18',
+        surface: '#0D1525',
+        s2:      '#111D30',
+        s3:      '#162036',
+        border:  '#1E2E45',
+        b2:      '#283D58',
+        ink:     '#EEF2F8',
+        muted:   '#8FA5BE',
+        faint:   '#4D6580',
         accent: {
-          blue: '#4EA1FF',
-          green: '#31D0AA',
-          amber: '#F5B942',
-          red: '#FF6B6B',
+          blue:  '#4EA1FF',
+          green: '#2EC89A',
+          amber: '#F0B429',
+          red:   '#F56565',
         },
       },
-      boxShadow: {
-        panel: '0 18px 45px rgba(0, 0, 0, 0.25)',
-      },
-      backgroundImage: {
-        'panel-grid':
-          'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
-      },
       fontFamily: {
-        sans: ['"Aptos"', '"Segoe UI Variable"', '"Segoe UI"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"Cascadia Code"', '"SFMono-Regular"', 'monospace'],
+        sans: ['Geist', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', '"Cascadia Code"', 'monospace'],
+      },
+      boxShadow: {
+        panel:  '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 20px 50px rgba(0,0,0,0.35)',
+        card:   '0 1px 0 0 rgba(255,255,255,0.04) inset, 0 4px 16px rgba(0,0,0,0.25)',
+        glow:   '0 0 24px rgba(78,161,255,0.15)',
+        'glow-green': '0 0 24px rgba(46,200,154,0.15)',
       },
       keyframes: {
         shimmer: {
-          '0%': { backgroundPosition: '-200% 0' },
+          '0%':   { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
-        float: {
-          '0%, 100%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-6px)' },
+        'scan-line': {
+          '0%':   { transform: 'translateY(-100%)' },
+          '100%': { transform: 'translateY(100vh)' },
+        },
+        'ping-slow': {
+          '75%,100%': { transform: 'scale(1.6)', opacity: '0' },
         },
       },
       animation: {
-        shimmer: 'shimmer 2.2s linear infinite',
-        float: 'float 6s ease-in-out infinite',
+        shimmer:    'shimmer 2.4s linear infinite',
+        'scan-line':'scan-line 8s linear infinite',
+        'ping-slow':'ping-slow 2s cubic-bezier(0,0,0.2,1) infinite',
       },
     },
   },

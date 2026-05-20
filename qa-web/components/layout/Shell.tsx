@@ -22,17 +22,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   if (isLoading || !isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg px-6 text-ink">
-        <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-slate-950/80 p-8 text-center shadow-panel">
-          <p className="text-xs uppercase tracking-[0.34em] text-sky-200/70">
-            Preparing workspace
-          </p>
-          <h1 className="mt-5 text-2xl font-semibold text-white">
-            Verifying operator session
-          </h1>
-          <p className="mt-4 text-sm leading-7 text-muted">
-            Loading the protected QAForge surface and restoring the most recent audit context.
-          </p>
+      <div className="flex min-h-screen items-center justify-center bg-bg">
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-1 mb-6">
+            {[0,1,2].map(i => (
+              <div key={i}
+                className="w-1.5 h-5 rounded-full bg-accent-blue"
+                style={{ animation: `dot-blink 1.1s ease-in-out ${i*0.18}s infinite` }}
+              />
+            ))}
+          </div>
+          <p className="font-mono text-[11px] tracking-widest text-faint uppercase">Verifying session</p>
         </div>
       </div>
     )
@@ -40,27 +40,30 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-bg text-ink">
-      <div className="hidden w-[310px] shrink-0 lg:block">
+      {/* Desktop sidebar */}
+      <div className="hidden w-[240px] shrink-0 lg:block h-screen sticky top-0">
         <Sidebar />
       </div>
 
-      {sidebarOpen ? (
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-bg/80 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
         >
           <div
-            className="h-full w-[300px] max-w-[85vw]"
-            onClick={(event) => event.stopPropagation()}
+            className="h-full w-[240px]"
+            onClick={e => e.stopPropagation()}
           >
             <Sidebar onNavigate={() => setSidebarOpen(false)} />
           </div>
         </div>
-      ) : null}
+      )}
 
-      <div className="min-w-0 flex-1">
-        <Topbar onMenuClick={() => setSidebarOpen((current) => !current)} />
-        <main className="min-h-[calc(100vh-73px)] overflow-x-hidden px-4 py-5 lg:px-6">
+      {/* Main content */}
+      <div className="min-w-0 flex-1 flex flex-col">
+        <Topbar onMenuClick={() => setSidebarOpen(v => !v)} />
+        <main className="flex-1 overflow-x-hidden">
           {children}
         </main>
       </div>
