@@ -1,0 +1,30 @@
+# Frontend dependencies & build outputs
+**/node_modules/
+**/.next/
+**/out/
+
+# Python virtual environments & caches
+**/venv/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Local environment variables and secrets
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+**/pwd.txt
+
+# IDEs & System files
+**/.vscode/
+**/.idea/
+**/.DS_Store
+**/Thumbs.db
+
+# Backend runtime/outputs
+**/qa-engine/outputs/
+**/qa-engine/traces/
