@@ -300,10 +300,11 @@ copy .env.example .env
 Required environment variables:
 
 - `GROQ_API_KEY`
-- `GITHUB_TOKEN`
-- `STAGING_BASE_URL`
+- `GITHUB_TOKEN` *(optional fallback for CLI scripts)*
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
+
+Runtime probe targets are **not** global env vars. Manual audits pass `base_url` per request. Webhook audits resolve `staging_url` from the Supabase `repository_configs` table (persisted when Auto Audits are enabled).
 
 Optional:
 

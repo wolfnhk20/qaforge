@@ -35,7 +35,10 @@ export interface AuditResponse {
 export interface WebhookConfig {
   enabled: boolean
   webhook_id?: number
+  staging_url?: string
+  branch?: string
   created_at?: string
+  updated_at?: string
   last_push_received?: string
   last_auto_audit?: string
 }
@@ -61,6 +64,7 @@ export interface AuditRequestPayload {
   base_commit?: string
   head_commit?: string
   base_url?: string
+  github_token?: string
 }
 
 export interface PipelineStage {

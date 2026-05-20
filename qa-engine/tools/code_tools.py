@@ -15,9 +15,8 @@ HTTP_METHODS = {"get", "post", "put", "delete", "patch", "options", "head"}
 
 
 def _get_github() -> Github:
-    if not config.GITHUB_TOKEN:
-        raise RuntimeError("GITHUB_TOKEN is not set.")
-    return Github(config.GITHUB_TOKEN)
+    token = config.get_github_token()
+    return Github(token)
 
 
 def _list_repository_files(repo: str, module_path: str) -> List[str]:

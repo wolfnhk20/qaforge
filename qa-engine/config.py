@@ -18,14 +18,25 @@ GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "llama-3.3-70b-versatile")
 
 # --- GitHub ---
-GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
+import contextvars
+github_token_var = contextvars.ContextVar("github_token", default=None)
+
+def get_github_token() -> str:
+    """Dynamically get the request-scoped GitHub token from the context, or fall back to the environment variable."""
+    token = github_token_var.get()
+    if token:
+        return token
+    env_token = os.getenv("GITHUB_TOKEN", "")
+    if env_token:
+        return env_token
+    raise RuntimeError("GitHub access token is missing or session has expired.")
+
 
 # --- Supabase ---
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 
-# --- Staging & Webhooks ---
-STAGING_BASE_URL: str = os.getenv("STAGING_BASE_URL", "http://localhost:8000")
+# --- Webhooks ---
 WEBHOOK_URL_BASE: str = os.getenv("WEBHOOK_URL_BASE", "http://localhost:8000")
 
 

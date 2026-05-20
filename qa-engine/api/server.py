@@ -19,13 +19,19 @@ from api.service import (
     AuditPersistenceError,
     AuditPipelineError,
     InvalidRepoError,
+    InvalidTargetUrlError,
     MalformedAuditOutputError,
+    RepoConfigMismatchError,
+    RepoConfigNotFoundError,
     ReportNotFoundError,
     build_audit_response,
     build_latest_audit_response,
     persist_audit_result,
+    resolve_webhook_audit_target,
     run_audit_pipeline,
 )
+from utils.target_url import TargetUrlError, resolve_audit_base_url
+from db.repo_config import get_repository_config, save_repository_config, set_repository_webhook_enabled
 from db.supabase import (
     SupabaseConfigError,
     SupabasePersistenceError,
@@ -49,6 +55,7 @@ class AuditRequest(BaseModel):
     head_commit: Optional[str] = None
     branch: str = config.DEFAULT_BRANCH
     base_url: Optional[str] = None
+    github_token: Optional[str] = None
 
 
 class AuditResponse(BaseModel):
@@ -69,6 +76,9 @@ class WebhookActionRequest(BaseModel):
 
     github_token: str
     action: Literal["enable", "disable"]
+    staging_url: Optional[str] = None
+    branch: str = config.DEFAULT_BRANCH
+    created_by: Optional[str] = None
 
 
 
@@ -99,6 +109,7 @@ async def health() -> Dict[str, str]:
 @app.post("/audit", response_model=AuditResponse)
 async def create_audit(request: AuditRequest) -> AuditResponse:
     """Trigger the existing LangGraph audit pipeline and persist the result."""
+    token_token = config.github_token_var.set(request.github_token)
     try:
         if request.scope == "pr" and request.pr_number is None:
             raise HTTPException(status_code=422, detail="`pr_number` is required when scope='pr'.")
@@ -133,6 +144,8 @@ async def create_audit(request: AuditRequest) -> AuditResponse:
 
     except InvalidRepoError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except InvalidTargetUrlError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ReportNotFoundError as exc:
         _save_log_best_effort("audit_report_missing", level="error", payload={"error": str(exc)})
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -159,6 +172,8 @@ async def create_audit(request: AuditRequest) -> AuditResponse:
             status_code=500,
             detail={"message": "Unexpected server error during audit execution.", "error": str(exc)},
         ) from exc
+    finally:
+        config.github_token_var.reset(token_token)
 
 
 @app.post("/audit/stream")
@@ -172,11 +187,14 @@ async def stream_audit(request: AuditRequest):
             detail="`base_commit` and `head_commit` are required when scope='commit_range'.",
         )
 
+    token_token = config.github_token_var.set(request.github_token)
     try:
         from api.service import validate_repo
         validate_repo(request.repo)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        config.github_token_var.reset(token_token)
 
     queue = asyncio.Queue()
 
@@ -186,6 +204,7 @@ async def stream_audit(request: AuditRequest):
     async def run_pipeline_task():
         from utils.trace import event_emitter
         event_emitter.set(emitter)
+        config.github_token_var.set(request.github_token)
         try:
             _save_log_best_effort(
                 "audit_requested",
@@ -208,6 +227,8 @@ async def stream_audit(request: AuditRequest):
                 audit_response=payload,
             )
             queue.put_nowait({"type": "complete", "data": payload})
+        except InvalidTargetUrlError as exc:
+            queue.put_nowait({"type": "error", "data": {"message": str(exc), "errors": []}})
         except Exception as exc:
             from api.service import AuditPipelineError
             err_msg = str(exc)
@@ -279,14 +300,22 @@ async def get_repo_webhook(owner: str, repo: str):
     repo_name = f"{owner}/{repo}"
     try:
         webhook = get_webhook(repo_name)
-        if not webhook:
+        repo_config = get_repository_config(repo_name)
+        if not webhook and not repo_config:
             return {"enabled": False}
+        enabled = bool(
+            (repo_config or {}).get("webhook_enabled")
+            or (webhook or {}).get("enabled", False)
+        )
         return {
-            "enabled": webhook.get("enabled", False),
-            "webhook_id": webhook.get("webhook_id"),
-            "created_at": webhook.get("created_at"),
-            "last_push_received": webhook.get("last_push_received"),
-            "last_auto_audit": webhook.get("last_auto_audit"),
+            "enabled": enabled,
+            "webhook_id": (webhook or {}).get("webhook_id"),
+            "staging_url": (repo_config or {}).get("staging_url") or (webhook or {}).get("staging_url"),
+            "branch": (repo_config or {}).get("branch", config.DEFAULT_BRANCH),
+            "created_at": (webhook or {}).get("created_at") or (repo_config or {}).get("created_at"),
+            "updated_at": (repo_config or {}).get("updated_at"),
+            "last_push_received": (webhook or {}).get("last_push_received"),
+            "last_auto_audit": (webhook or {}).get("last_auto_audit"),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve webhook configuration: {exc}")
@@ -312,8 +341,19 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
         )
 
     if action == "enable":
-        # Check if webhook exists in Supabase
         webhook = get_webhook(repo_name)
+        existing_config = get_repository_config(repo_name)
+        try:
+            resolved_staging_url = resolve_audit_base_url(
+                request.staging_url,
+                fallback=(existing_config or {}).get("staging_url")
+                or (webhook.get("staging_url") if webhook else None),
+                required=True,
+            )
+        except TargetUrlError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        audit_branch = (request.branch or config.DEFAULT_BRANCH).strip() or config.DEFAULT_BRANCH
         
         # If enabled in DB, check GitHub side
         webhook_id = webhook.get("webhook_id") if webhook else None
@@ -372,12 +412,20 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
                 repo=repo_name,
                 webhook_id=webhook_id,
                 webhook_secret=webhook_secret,
-                enabled=True
+                enabled=True,
+                github_token=github_token,
+            )
+            save_repository_config(
+                repo_name=repo_name,
+                branch=audit_branch,
+                staging_url=resolved_staging_url,
+                webhook_enabled=True,
+                created_by=request.created_by,
             )
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to save webhook configuration in database: {exc}"
+                detail=f"Failed to save repository runtime configuration: {exc}"
             )
 
         return {
@@ -404,6 +452,7 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
 
         try:
             update_webhook_status(repo=repo_name, enabled=False)
+            set_repository_webhook_enabled(repo_name=repo_name, enabled=False)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
@@ -421,12 +470,16 @@ async def background_audit_runner(
     branch: str,
     base_commit: str,
     head_commit: str,
-    audit_id: int
+    audit_id: int,
+    github_token: Optional[str] = None,
+    base_url: Optional[str] = None,
 ):
     """Background task to execute the audit pipeline for a webhook push event."""
     from utils.trace import event_emitter
     from db.supabase import save_logs, get_client
     import asyncio
+
+    config.github_token_var.set(github_token)
 
     findings_lock = asyncio.Lock()
     findings_list = []
@@ -485,7 +538,8 @@ async def background_audit_runner(
             branch=branch,
             base_commit=None if is_new_branch else base_commit,
             head_commit=None if is_new_branch else head_commit,
-            origin="github_push"
+            base_url=base_url,
+            origin="github_push",
         )
 
         payload = build_audit_response(final_state, repo)
@@ -503,13 +557,55 @@ async def background_audit_runner(
             audit_id=audit_id
         )
 
-    except Exception as exc:
-        print(f"Auto Audit run failed: {exc}")
+    except (InvalidTargetUrlError, RepoConfigNotFoundError, RepoConfigMismatchError) as exc:
         err_msg = str(exc)
+        report_md = (
+            "# Auto Audit Execution Failed\n\n"
+            f"**Reason:** {err_msg}\n\n"
+            "**Remediation:** Open the dashboard, set a valid staging URL, and re-enable "
+            "Auto Audits so repository runtime configuration is persisted in Supabase."
+        )
         try:
             get_client().table("audits").update({
                 "status": "error",
-                "report_markdown": f"# Auto Audit Execution Failed\n\n{err_msg}"
+                "report_markdown": report_md,
+            }).eq("id", audit_id).execute()
+            save_logs(
+                message=f"Auto Audit execution failed: {err_msg}",
+                level="error",
+                audit_id=audit_id,
+            )
+        except Exception as db_exc:
+            print(f"Failed to update error status in DB: {db_exc}")
+        return
+    except Exception as exc:
+        print(f"Auto Audit run failed: {exc}")
+        err_msg = str(exc)
+        report_md = f"# Auto Audit Execution Failed\n\n{err_msg}"
+
+        # Check for GitHub-specific auth/permission errors
+        from github.GithubException import BadCredentialsException, GithubException
+        if isinstance(exc, BadCredentialsException) or "bad credentials" in err_msg.lower():
+            err_msg = "GitHub OAuth session has expired or been revoked."
+            report_md = (
+                "# Auto Audit Execution Failed\n\n"
+                "**Reason:** The authenticated GitHub OAuth session has expired or was revoked.\n\n"
+                "**Remediation:** Please log into the QAForge dashboard again and toggle "
+                "'Auto Audits' off and on for this repository to refresh the webhook credentials."
+            )
+        elif isinstance(exc, GithubException) and exc.status in (403, 404):
+            err_msg = "GitHub repository is inaccessible or has insufficient permissions."
+            report_md = (
+                "# Auto Audit Execution Failed\n\n"
+                "**Reason:** The repository is inaccessible or the OAuth token has insufficient permissions.\n\n"
+                "**Remediation:** Ensure that you still have access to this repository and that the OAuth session "
+                "grants the necessary scopes to read repository files and branches."
+            )
+
+        try:
+            get_client().table("audits").update({
+                "status": "error",
+                "report_markdown": report_md
             }).eq("id", audit_id).execute()
 
             save_logs(
@@ -545,8 +641,11 @@ async def github_webhook_receiver(request: Request, background_tasks: Background
         raise HTTPException(status_code=400, detail="Repository full name missing from payload")
 
     webhook = get_webhook(repo_name)
-    if not webhook or not webhook.get("enabled"):
-        raise HTTPException(status_code=404, detail="Webhook not configured or disabled for this repository")
+    if not webhook:
+        raise HTTPException(
+            status_code=404,
+            detail=f"GitHub webhook credentials not found for repository '{repo_name}'.",
+        )
 
     webhook_secret = webhook.get("webhook_secret")
 
@@ -572,6 +671,16 @@ async def github_webhook_receiver(request: Request, background_tasks: Background
     branch = ref.replace("refs/heads/", "")
     head_commit = payload.get("after")
     base_commit = payload.get("before")
+
+    try:
+        resolved_base_url, audit_branch = resolve_webhook_audit_target(
+            repo_name=repo_name,
+            push_branch=branch,
+        )
+    except RepoConfigNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RepoConfigMismatchError, InvalidTargetUrlError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     try:
         from datetime import datetime, timezone
@@ -604,19 +713,23 @@ async def github_webhook_receiver(request: Request, background_tasks: Background
     except Exception:
         pass
 
+    github_token = webhook.get("github_token")
+
     background_tasks.add_task(
         background_audit_runner,
         repo=repo_name,
-        branch=branch,
+        branch=audit_branch,
         base_commit=base_commit,
         head_commit=head_commit,
-        audit_id=audit_id
+        audit_id=audit_id,
+        github_token=github_token,
+        base_url=resolved_base_url,
     )
 
     return {
         "status": "triggered",
         "audit_id": audit_id,
         "repo": repo_name,
-        "branch": branch,
+        "branch": audit_branch,
     }
 

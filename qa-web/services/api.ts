@@ -184,7 +184,12 @@ export function toggleWebhook(
   owner: string,
   repo: string,
   githubToken: string,
-  action: 'enable' | 'disable'
+  action: 'enable' | 'disable',
+  options?: {
+    stagingUrl?: string
+    branch?: string
+    createdBy?: string
+  }
 ) {
   return request<{ status: string; message: string; webhook_id?: number }>(
     `/repos/${owner}/${repo}/webhook`,
@@ -193,6 +198,9 @@ export function toggleWebhook(
       body: JSON.stringify({
         github_token: githubToken,
         action,
+        staging_url: options?.stagingUrl,
+        branch: options?.branch,
+        created_by: options?.createdBy,
       }),
     }
   )

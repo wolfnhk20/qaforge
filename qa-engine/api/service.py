@@ -17,6 +17,7 @@ from db.supabase import (
     save_logs,
 )
 from graph.pipeline import build_pipeline
+from utils.target_url import TargetUrlError, resolve_audit_base_url
 
 LATEST_REPORT_PATH = config.OUTPUTS_DIR / "audit_report.md"
 LATEST_PROBE_RESULTS_PATH = config.OUTPUTS_DIR / "probe_results.json"
@@ -49,6 +50,71 @@ class MalformedAuditOutputError(ValueError):
     """Raised when audit artifacts do not match the expected shape."""
 
 
+class InvalidTargetUrlError(ValueError):
+    """Raised when the per-audit staging/base URL is missing or invalid."""
+
+
+class RepoConfigNotFoundError(ValueError):
+    """Raised when no persisted repository runtime configuration exists."""
+
+
+class RepoConfigMismatchError(ValueError):
+    """Raised when webhook state and repository configuration are inconsistent."""
+
+
+def resolve_webhook_audit_target(
+    *,
+    repo_name: str,
+    push_branch: Optional[str] = None,
+) -> tuple[str, str]:
+    """Resolve staging URL and audit branch for a webhook-triggered run."""
+    from db.repo_config import get_repository_config
+    from db.supabase import get_webhook
+
+    normalized_repo = (repo_name or "").strip()
+    if not normalized_repo:
+        raise RepoConfigMismatchError("Webhook payload did not include a valid repository name.")
+
+    repo_config = get_repository_config(normalized_repo)
+    if not repo_config:
+        raise RepoConfigNotFoundError(
+            f"No runtime configuration found for repository '{normalized_repo}'. "
+            "Enable Auto Audits in the dashboard to persist staging URL and branch."
+        )
+
+    if not repo_config.get("webhook_enabled"):
+        raise RepoConfigMismatchError(
+            f"Auto Audits are disabled in repository configuration for '{normalized_repo}'."
+        )
+
+    webhook = get_webhook(normalized_repo)
+    if not webhook:
+        raise RepoConfigMismatchError(
+            f"GitHub webhook credentials are missing for '{normalized_repo}'. "
+            "Re-enable Auto Audits to restore webhook registration."
+        )
+    if not webhook.get("enabled"):
+        raise RepoConfigMismatchError(
+            f"GitHub webhook is disabled for '{normalized_repo}' while repository config expects "
+            "webhook-enabled audits. Re-enable Auto Audits to reconcile state."
+        )
+    webhook_repo = (webhook.get("repo") or webhook.get("repo_name") or "").strip()
+    if webhook_repo and webhook_repo != normalized_repo:
+        raise RepoConfigMismatchError(
+            f"Webhook repository mismatch: expected '{normalized_repo}', found '{webhook_repo}'."
+        )
+
+    staging_url = repo_config.get("staging_url") or webhook.get("staging_url")
+    try:
+        base_url = resolve_audit_base_url(staging_url, required=True)
+    except TargetUrlError as exc:
+        raise InvalidTargetUrlError(str(exc)) from exc
+
+    config_branch = (repo_config.get("branch") or "main").strip() or "main"
+    audit_branch = (push_branch or "").strip() or config_branch
+    return base_url, audit_branch
+
+
 def validate_repo(repo: str) -> str:
     """Validate GitHub repository format and accessibility."""
     normalized = (repo or "").strip()
@@ -57,9 +123,8 @@ def validate_repo(repo: str) -> str:
     
     try:
         from github import Github
-        if not config.GITHUB_TOKEN:
-            raise InvalidRepoError("GITHUB_TOKEN is not configured on the server.")
-        gh = Github(config.GITHUB_TOKEN)
+        token = config.get_github_token()
+        gh = Github(token)
         # This will fetch repository details or raise an exception if inaccessible/missing
         gh.get_repo(normalized)
     except Exception as exc:
@@ -160,6 +225,11 @@ async def run_audit_pipeline(
     normalized_repo = validate_repo(repo)
     normalized_module = config.normalize_module_path(module_path)
 
+    try:
+        resolved_base_url = resolve_audit_base_url(base_url, required=True)
+    except TargetUrlError as exc:
+        raise InvalidTargetUrlError(str(exc)) from exc
+
     initial_state = {
         "repo": normalized_repo,
         "module_path": normalized_module,
@@ -171,7 +241,7 @@ async def run_audit_pipeline(
         "auto_run": True,
         "probe_results": {},
         "errors": [],
-        "base_url": base_url,
+        "base_url": resolved_base_url,
         "origin": origin,
     }
 

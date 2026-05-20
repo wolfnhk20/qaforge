@@ -158,7 +158,7 @@ export default function AuditLauncher() {
             value={repoDraft.baseUrl || ''}
             onChange={(e) => setRepoDraft({ baseUrl: e.target.value })}
             className="text-[12px] font-mono text-muted bg-s2 border border-border rounded px-2 py-0.5 w-44 outline-none focus:border-accent-blue/50 text-left"
-            placeholder="http://localhost:5000"
+            placeholder="https://staging.example.com"
           />
         </div>
         {repoDraft.scope === 'pr' && (

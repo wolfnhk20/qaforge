@@ -35,11 +35,13 @@ def push_github_issue(
     audit_report_url: str = "",
 ) -> str:
     """File one GitHub issue for a gap. Returns the issue URL."""
-    if not config.GITHUB_TOKEN:
-        trace(AGENT, "GITHUB_TOKEN not set - skipping issue filing.")
+    try:
+        token = config.get_github_token()
+    except RuntimeError:
+        trace(AGENT, "GitHub token not available - skipping issue filing.")
         return ""
 
-    g = Github(config.GITHUB_TOKEN)
+    g = Github(token)
     repo = g.get_repo(repo_name)
 
     title = (

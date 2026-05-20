@@ -11,6 +11,7 @@ from langgraph.graph import END, StateGraph
 
 import config
 from agents.code_analyst import run_code_analyst
+from utils.target_url import TargetUrlError, resolve_audit_base_url
 from agents.intent_extractor import run_intent_extractor
 from agents.probe_designer import run_probe_designer, show_probe_selection
 from agents.probe_executor import run_probe
@@ -120,10 +121,18 @@ def probe_selection_node(state: PipelineState) -> dict:
         if state.get("auto_run"):
             selected = [probe["probe_id"] for probe in plan.get("probes", [])]
             trace("PIPELINE", f"Auto-run enabled. Selecting all {len(selected)} probes.")
-            return {"selected_probes": selected}
-        selected = show_probe_selection(plan)
-        trace("PIPELINE", f"User selected {len(selected)} probes: {selected}")
-        return {"selected_probes": selected}
+            result: dict = {"selected_probes": selected}
+        else:
+            selected = show_probe_selection(plan)
+            trace("PIPELINE", f"User selected {len(selected)} probes: {selected}")
+            result = {"selected_probes": selected}
+
+        try:
+            result["base_url"] = resolve_audit_base_url(state.get("base_url"), required=True)
+        except TargetUrlError as exc:
+            trace("PIPELINE", f"Target URL validation failed: {exc}")
+            result["errors"] = [f"target_url: {exc}"]
+        return result
     except Exception as exc:
         trace("PIPELINE", f"Probe selection ERROR: {exc}")
         all_ids = [probe["probe_id"] for probe in (state.get("probe_plan") or {}).get("probes", [])]
@@ -159,14 +168,18 @@ def dispatch_probes(state: PipelineState) -> list[Send]:
     """Create one Send step per selected probe."""
     plan = state.get("probe_plan") or {"probes": []}
     selected = state.get("selected_probes") or []
-    base_url = state.get("base_url") or config.STAGING_BASE_URL or "http://localhost:8000"
+    base_url = state.get("base_url")
+
+    if not base_url:
+        trace("PIPELINE", "Skipping probe dispatch — no valid staging base URL in audit context.")
+        return []
 
     sends = [
         Send("probe_executor_node", {"probe": probe, "base_url": base_url})
         for probe in plan["probes"]
         if probe["probe_id"] in selected
     ]
-    trace("PIPELINE", f"Dispatching {len(sends)} probes in parallel...")
+    trace("PIPELINE", f"Dispatching {len(sends)} probes against {base_url}...")
     return sends
 
 

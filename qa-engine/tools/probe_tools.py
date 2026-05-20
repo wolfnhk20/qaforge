@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from utils.target_url import TargetUrlError, normalize_base_url
 from utils.trace import trace
 
 AGENT = "PROBE_EXECUTOR"
@@ -36,9 +37,16 @@ async def execute_api_call(
     Returns:
         Tuple of (status_code, response_body, response_time_ms, error_or_None).
     """
+    try:
+        normalized_base = normalize_base_url(base_url)
+    except TargetUrlError as exc:
+        return 0, {}, 0, f"INVALID_TARGET_URL: {exc}"
+
     # Extract path from endpoint string like "POST /payment"
     path = endpoint.split(" ", 1)[1] if " " in endpoint else endpoint
-    url = f"{base_url.rstrip('/')}{path}"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    url = f"{normalized_base}{path}"
 
     payload_summary = json.dumps(payload)
     if len(payload_summary) > 80:

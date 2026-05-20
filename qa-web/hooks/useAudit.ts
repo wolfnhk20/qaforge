@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { useAuth } from '@/lib/auth'
 import { PIPELINE_BLUEPRINT } from '@/lib/utils'
 import { ApiError, getLatestAudit, streamAudit, getAuditLogs } from '@/services/api'
 import { useAuditStore } from '@/store/auditStore'
@@ -56,6 +57,7 @@ const TELEMETRY_LOGS: Record<string, string[]> = {
 export function useAudit() {
   const queryClient = useQueryClient()
   const telemetryIntervalRef = useRef<number | null>(null)
+  const { session } = useAuth()
 
 
   const repoDraft = useAuditStore((state) => state.repoDraft)
@@ -325,6 +327,39 @@ export function useAudit() {
       }
     }
 
+    const stagingUrl = repo.baseUrl?.trim()
+    if (!stagingUrl) {
+      failAuditRun('Staging base URL is required for runtime probe execution.')
+      appendLog({
+        level: 'error',
+        source: 'Validation',
+        message: 'Missing staging base URL.',
+        details: 'Enter the deployed API base URL in the audit launcher before running.',
+      })
+      isStreamingSSE.current = false
+      return
+    }
+
+    try {
+      const parsed = new URL(stagingUrl.includes('://') ? stagingUrl : `https://${stagingUrl}`)
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('invalid protocol')
+      }
+      if (!parsed.hostname) {
+        throw new Error('missing hostname')
+      }
+    } catch {
+      failAuditRun('Staging base URL is invalid. Use http(s)://host[:port] format.')
+      appendLog({
+        level: 'error',
+        source: 'Validation',
+        message: 'Invalid staging base URL.',
+        details: `Could not parse: ${stagingUrl}`,
+      })
+      isStreamingSSE.current = false
+      return
+    }
+
     const payload: AuditRequestPayload = {
       repo: repo.fullName.trim(),
       module: repo.module,
@@ -333,7 +368,8 @@ export function useAudit() {
       pr_number: repo.prNumber,
       base_commit: repo.baseCommit?.trim(),
       head_commit: repo.headCommit?.trim(),
-      base_url: repo.baseUrl?.trim(),
+      base_url: stagingUrl,
+      github_token: session?.provider_token,
     }
 
     startAuditRun(repo)

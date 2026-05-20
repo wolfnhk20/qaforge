@@ -40,6 +40,8 @@ export default function RepoSelector() {
   const [webhookError, setWebhookError] = useState<string | null>(null)
 
   const providerToken = session?.provider_token
+  const createdBy =
+    session?.user?.email || session?.user?.user_name || session?.user?.id || undefined
 
   useEffect(() => {
     if (!repoDraft.fullName) {
@@ -55,6 +57,16 @@ export default function RepoSelector() {
         if (owner && name) {
           const config = await getWebhookConfig(owner, name)
           setWebhookConfig(config)
+          const draft: { baseUrl?: string; branch?: string } = {}
+          if (config.staging_url && !repoDraft.baseUrl) {
+            draft.baseUrl = config.staging_url
+          }
+          if (config.branch && !repoDraft.branch) {
+            draft.branch = config.branch
+          }
+          if (Object.keys(draft).length > 0) {
+            setRepoDraft(draft)
+          }
         }
       } catch (err: any) {
         console.error('Failed to load webhook config:', err)
@@ -77,8 +89,18 @@ export default function RepoSelector() {
     const currentEnabled = webhookConfig?.enabled || false
     const action = currentEnabled ? 'disable' : 'enable'
 
+    if (action === 'enable' && !repoDraft.baseUrl?.trim()) {
+      setWebhookError('Staging URL is required before enabling Auto Audits.')
+      setTogglingWebhook(false)
+      return
+    }
+
     try {
-      await toggleWebhook(owner, name, providerToken, action)
+      await toggleWebhook(owner, name, providerToken, action, {
+        stagingUrl: action === 'enable' ? repoDraft.baseUrl?.trim() : undefined,
+        branch: action === 'enable' ? repoDraft.branch?.trim() || 'main' : undefined,
+        createdBy: action === 'enable' ? createdBy : undefined,
+      })
       const updated = await getWebhookConfig(owner, name)
       setWebhookConfig(updated)
     } catch (err: any) {

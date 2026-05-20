@@ -136,6 +136,8 @@ def save_webhook(
     webhook_id: int,
     webhook_secret: str,
     enabled: bool = True,
+    github_token: Optional[str] = None,
+    staging_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Persist/update webhook metadata in Supabase."""
     row = {
@@ -145,6 +147,10 @@ def save_webhook(
         "enabled": enabled,
         "created_at": _utc_now_iso(),
     }
+    if github_token:
+        row["github_token"] = github_token
+    if staging_url:
+        row["staging_url"] = staging_url
     try:
         response = get_client().table("webhooks").upsert(row).execute()
         data = getattr(response, "data", None) or []

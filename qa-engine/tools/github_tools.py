@@ -20,9 +20,8 @@ AGENT = "INTENT_EXTRACTOR"
 
 def _get_github() -> Github:
     """Return an authenticated PyGithub client."""
-    if not config.GITHUB_TOKEN:
-        raise RuntimeError("GITHUB_TOKEN is not set. Export it before running.")
-    return Github(config.GITHUB_TOKEN)
+    token = config.get_github_token()
+    return Github(token)
 
 
 # ---------------------------------------------------------------------------
