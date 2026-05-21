@@ -38,11 +38,18 @@ def main() -> None:
 
     import uvicorn
 
+    # Render/Railway/Fly set PORT; bind 0.0.0.0 so the platform can route traffic.
+    port = int(os.getenv("PORT") or os.getenv("QA_ENGINE_API_PORT", "8000"))
+    on_paas = bool(os.getenv("PORT"))
+    host = os.getenv("QA_ENGINE_API_HOST") or ("0.0.0.0" if on_paas else "127.0.0.1")
+    reload_default = "0" if on_paas else "1"
+    reload = os.getenv("QA_ENGINE_API_RELOAD", reload_default) != "0"
+
     uvicorn.run(
         "api.server:app",
-        host=os.getenv("QA_ENGINE_API_HOST", "127.0.0.1"),
-        port=int(os.getenv("QA_ENGINE_API_PORT", "8000")),
-        reload=os.getenv("QA_ENGINE_API_RELOAD", "1") != "0",
+        host=host,
+        port=port,
+        reload=reload,
     )
 
 

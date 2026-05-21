@@ -100,6 +100,13 @@ def _save_log_best_effort(message: str, *, level: str = "info", payload: Optiona
         pass
 
 
+@app.get("/")
+@app.head("/")
+async def root() -> Dict[str, str]:
+    """Root health probe for platform load balancers (e.g. Render HEAD /)."""
+    return {"status": "ok", "service": "qa-engine"}
+
+
 @app.get("/health")
 async def health() -> Dict[str, str]:
     """Basic health check endpoint."""
