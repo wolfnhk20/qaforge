@@ -51,6 +51,12 @@ def save_repository_config(
     try:
         response = get_client().table("repository_configs").upsert(row).execute()
     except Exception as exc:
+        err = str(exc)
+        if "repository_configs" in err and ("PGRST205" in err or "PGRST204" in err):
+            raise SupabasePersistenceError(
+                "Failed to save repository config: table repository_configs is missing. "
+                "Run qa-engine/supabase_migrations.sql in the Supabase SQL editor."
+            ) from exc
         raise SupabasePersistenceError(f"Failed to save repository config: {exc}") from exc
 
     data = getattr(response, "data", None) or []

@@ -30,10 +30,10 @@ create table if not exists public.webhooks (
     enabled boolean not null default true,
     created_at timestamptz not null default timezone('utc', now()),
     last_push_received timestamptz,
-    last_auto_audit timestamptz,
-    staging_url text
+    last_auto_audit timestamptz
 );
 
+-- Legacy columns (optional; runtime targets live in repository_configs)
 alter table public.webhooks add column if not exists staging_url text;
 
 -- Per-repository runtime configuration for autonomous webhook audits

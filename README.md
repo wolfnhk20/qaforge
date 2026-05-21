@@ -142,15 +142,15 @@ QAForge supports fully autonomous auditing triggered by Git pushes via GitHub We
 
 ### How It Works:
 1. **GitHub OAuth Session**: Authenticate with your GitHub account in the console. Your access token is retrieved securely from the Supabase auth session.
-2. **Auto Audits Toggle**: Enable **Auto Audits** for any repository from the dashboard console. This registers a repository webhook via the GitHub API using the authenticated user's access token, and stores the token securely in the webhook metadata.
-3. **Continuous Auditing**: Subsequent push events to your repository will trigger the multi-agent audit pipeline in the backend. The webhook receiver reads the stored OAuth token and runs the agent graph with request-scoped credentials.
+2. **Auto Audits Toggle**: Enable **Auto Audits** for any repository from the dashboard console. This registers a GitHub webhook using your live OAuth `provider_token` (sent per request, not stored in the database).
+3. **Continuous Auditing**: Push events trigger the audit pipeline using the cached OAuth session from enable time. Re-enable Auto Audits after a backend restart if pushes stop running.
 4. **Live Synchronization**: The console dashboard polls the latest audit state dynamically, streaming logs, updating progress bars, and updating findings progressively without needing page refreshes.
 
 ### Prerequisites & Credentials:
 - **Supabase OAuth Link**: Ensure your Supabase project is configured with GitHub authentication (OAuth) enabling the `repo` scope to manage webhooks and read repository files.
 - **Per-repository runtime config**: Staging URL and branch are stored in Supabase `repository_configs` when you enable Auto Audits. Webhook-triggered audits resolve the target automatically from that table — there is no global `STAGING_BASE_URL`.
 - `WEBHOOK_URL_BASE`: The publicly reachable base URL of your FastAPI backend (production: `https://qaforge-api.onrender.com`; local dev: an `ngrok` tunnel or `http://localhost:8000`). GitHub hooks target `{WEBHOOK_URL_BASE}/webhook/github`.
-- Per-repo webhook secrets are generated automatically when enabling Auto Audits (stored in Supabase `webhooks`); you do not set a global `WEBHOOK_SECRET`.
+- Per-repo webhook secrets are generated automatically when enabling Auto Audits (stored in Supabase `webhooks`). OAuth tokens are not stored in the database.
 
 ### Architecture Notes (Dynamic Token Migration):
 - All PyGithub clients and GitHub tools read the token dynamically from `config.github_token_var` (an async/thread-safe `ContextVar`). This isolates client connections per request/webhook pipeline task and completely removes dependencies on any hardcoded backend token.

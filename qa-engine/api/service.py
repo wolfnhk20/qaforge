@@ -104,7 +104,7 @@ def resolve_webhook_audit_target(
             f"Webhook repository mismatch: expected '{normalized_repo}', found '{webhook_repo}'."
         )
 
-    staging_url = repo_config.get("staging_url") or webhook.get("staging_url")
+    staging_url = repo_config.get("staging_url")
     try:
         base_url = resolve_audit_base_url(staging_url, required=True)
     except TargetUrlError as exc:
@@ -123,14 +123,31 @@ def validate_repo(repo: str) -> str:
     
     try:
         from github import Github
+        from github.GithubException import BadCredentialsException, GithubException
+
         token = config.get_github_token()
         gh = Github(token)
-        # This will fetch repository details or raise an exception if inaccessible/missing
         gh.get_repo(normalized)
+    except RuntimeError as exc:
+        raise InvalidRepoError(str(exc)) from exc
+    except BadCredentialsException as exc:
+        raise InvalidRepoError(
+            f"GitHub OAuth session has expired or was revoked for repository '{normalized}'."
+        ) from exc
+    except GithubException as exc:
+        if exc.status in (403, 404):
+            raise InvalidRepoError(
+                f"Repository '{normalized}' is not accessible with the current GitHub OAuth session."
+            ) from exc
+        raise InvalidRepoError(
+            f"Repository '{normalized}' is not accessible or does not exist on GitHub. (Details: {exc})"
+        ) from exc
+    except InvalidRepoError:
+        raise
     except Exception as exc:
         raise InvalidRepoError(
             f"Repository '{normalized}' is not accessible or does not exist on GitHub. (Details: {exc})"
-        )
+        ) from exc
         
     return normalized
 

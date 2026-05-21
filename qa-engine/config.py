@@ -22,14 +22,17 @@ import contextvars
 github_token_var = contextvars.ContextVar("github_token", default=None)
 
 def get_github_token() -> str:
-    """Dynamically get the request-scoped GitHub token from the context, or fall back to the environment variable."""
+    """Get GitHub OAuth provider token from request context or optional env fallback."""
     token = github_token_var.get()
     if token:
         return token
     env_token = os.getenv("GITHUB_TOKEN", "")
     if env_token:
         return env_token
-    raise RuntimeError("GitHub access token is missing or session has expired.")
+    raise RuntimeError(
+        "GitHub OAuth provider token is missing. Sign in via the dashboard or pass "
+        "github_token on API requests."
+    )
 
 
 # --- Supabase ---

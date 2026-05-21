@@ -81,7 +81,20 @@ Add **both** redirect URLs if you use local and production.
 
 ### 2.5 Database tables
 
-Run `qa-engine/supabase_schema.sql` in the Supabase SQL editor (`audits`, `logs`, `webhooks`, `repository_configs`).
+Run `qa-engine/supabase_schema.sql` in the Supabase SQL editor for a **new** project.
+
+If the project already has `audits` / `webhooks` from an older deploy, run **`qa-engine/supabase_migrations.sql`** instead (adds `repository_configs`, etc.).
+
+Required tables/columns for Auto Audits:
+
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `webhooks` | `webhook_id`, `webhook_secret`, `enabled` | GitHub hook registration + HMAC |
+| `repository_configs` | `staging_url`, `branch`, `webhook_enabled`, `repo_name` | Runtime probe target per repo |
+
+GitHub OAuth tokens are **not** stored in Supabase. The dashboard sends `provider_token` when enabling Auto Audits; the backend caches it in memory for webhook-triggered runs (re-enable after server restarts if needed).
+
+After running SQL, wait ~30 seconds for Supabase schema cache to refresh, then retry **Save runtime config**.
 
 ### 2.6 Backend Supabase keys (Render)
 

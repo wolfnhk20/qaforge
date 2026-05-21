@@ -30,6 +30,13 @@ from api.service import (
     resolve_webhook_audit_target,
     run_audit_pipeline,
 )
+from utils.github_auth import (
+    GitHubAuthError,
+    cache_repo_provider_token,
+    clear_repo_provider_token,
+    resolve_provider_token_for_repo,
+    verify_github_repo_access,
+)
 from utils.target_url import TargetUrlError, resolve_audit_base_url
 from db.repo_config import get_repository_config, save_repository_config, set_repository_webhook_enabled
 from db.supabase import (
@@ -74,7 +81,7 @@ class AuditResponse(BaseModel):
 class WebhookActionRequest(BaseModel):
     """Incoming payload for POST /repos/{owner}/{repo}/webhook."""
 
-    github_token: str
+    github_token: str  # GitHub OAuth provider_token from the signed-in user session (not stored in DB)
     action: Literal["enable", "disable"]
     staging_url: Optional[str] = None
     branch: str = config.DEFAULT_BRANCH
@@ -325,7 +332,7 @@ async def get_repo_webhook(owner: str, repo: str):
         return {
             "enabled": enabled,
             "webhook_id": (webhook or {}).get("webhook_id"),
-            "staging_url": (repo_config or {}).get("staging_url") or (webhook or {}).get("staging_url"),
+            "staging_url": (repo_config or {}).get("staging_url"),
             "branch": (repo_config or {}).get("branch", config.DEFAULT_BRANCH),
             "created_at": (webhook or {}).get("created_at") or (repo_config or {}).get("created_at"),
             "updated_at": (repo_config or {}).get("updated_at"),
@@ -380,20 +387,29 @@ async def save_repo_runtime_config(owner: str, repo: str, request: RepoConfigReq
 async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionRequest):
     """Enable or disable GitHub webhooks for the given repository."""
     repo_name = f"{owner}/{repo}"
-    github_token = request.github_token
+    provider_token = (request.github_token or "").strip()
     action = request.action
+
+    if not provider_token:
+        raise HTTPException(
+            status_code=401,
+            detail="GitHub OAuth session is required. Sign in and try again.",
+        )
 
     from github import Github
     from github.GithubException import GithubException, UnknownObjectException
 
     try:
-        gh = Github(github_token)
+        verify_github_repo_access(repo_name, provider_token)
+        gh = Github(provider_token)
         gh_repo = gh.get_repo(repo_name)
+    except GitHubAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=401,
-            detail=f"Failed to authenticate with GitHub or repository '{repo_name}' is inaccessible: {exc}"
-        )
+            detail=f"Failed to authenticate with GitHub or repository '{repo_name}' is inaccessible: {exc}",
+        ) from exc
 
     if action == "enable":
         webhook = get_webhook(repo_name)
@@ -401,8 +417,7 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
         try:
             resolved_staging_url = resolve_audit_base_url(
                 request.staging_url,
-                fallback=(existing_config or {}).get("staging_url")
-                or (webhook.get("staging_url") if webhook else None),
+                fallback=(existing_config or {}).get("staging_url"),
                 required=True,
             )
         except TargetUrlError as exc:
@@ -468,7 +483,6 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
                 webhook_id=webhook_id,
                 webhook_secret=webhook_secret,
                 enabled=True,
-                github_token=github_token,
             )
             save_repository_config(
                 repo_name=repo_name,
@@ -477,11 +491,12 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
                 webhook_enabled=True,
                 created_by=request.created_by,
             )
+            cache_repo_provider_token(repo_name, provider_token)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to save repository runtime configuration: {exc}"
-            )
+                detail=f"Failed to save repository runtime configuration: {exc}",
+            ) from exc
 
         return {
             "status": "success",
@@ -508,11 +523,12 @@ async def toggle_repo_webhook(owner: str, repo: str, request: WebhookActionReque
         try:
             update_webhook_status(repo=repo_name, enabled=False)
             set_repository_webhook_enabled(repo_name=repo_name, enabled=False)
+            clear_repo_provider_token(repo_name)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to disable webhook configuration in database: {exc}"
-            )
+                detail=f"Failed to disable webhook configuration in database: {exc}",
+            ) from exc
 
         return {
             "status": "success",
@@ -526,7 +542,6 @@ async def background_audit_runner(
     base_commit: str,
     head_commit: str,
     audit_id: int,
-    github_token: Optional[str] = None,
     base_url: Optional[str] = None,
 ):
     """Background task to execute the audit pipeline for a webhook push event."""
@@ -534,7 +549,25 @@ async def background_audit_runner(
     from db.supabase import save_logs, get_client
     import asyncio
 
-    config.github_token_var.set(github_token)
+    try:
+        provider_token = resolve_provider_token_for_repo(repo)
+        config.github_token_var.set(provider_token)
+    except GitHubAuthError as exc:
+        report_md = (
+            "# Auto Audit Execution Failed\n\n"
+            f"**Reason:** {exc}\n\n"
+            "**Remediation:** Sign in to the QAForge dashboard with GitHub and "
+            "re-enable Auto Audits for this repository to refresh the OAuth session."
+        )
+        try:
+            get_client().table("audits").update({
+                "status": "error",
+                "report_markdown": report_md,
+            }).eq("id", audit_id).execute()
+            save_logs(message=str(exc), level="error", audit_id=audit_id)
+        except Exception:
+            pass
+        return
 
     findings_lock = asyncio.Lock()
     findings_list = []
@@ -612,6 +645,22 @@ async def background_audit_runner(
             audit_id=audit_id
         )
 
+    except GitHubAuthError as exc:
+        err_msg = str(exc)
+        report_md = (
+            "# Auto Audit Execution Failed\n\n"
+            f"**Reason:** {err_msg}\n\n"
+            "**Remediation:** Sign in with GitHub and re-enable Auto Audits to refresh OAuth credentials."
+        )
+        try:
+            get_client().table("audits").update({
+                "status": "error",
+                "report_markdown": report_md,
+            }).eq("id", audit_id).execute()
+            save_logs(message=f"Auto Audit execution failed: {err_msg}", level="error", audit_id=audit_id)
+        except Exception as db_exc:
+            print(f"Failed to update error status in DB: {db_exc}")
+        return
     except (InvalidTargetUrlError, RepoConfigNotFoundError, RepoConfigMismatchError) as exc:
         err_msg = str(exc)
         report_md = (
@@ -768,8 +817,6 @@ async def github_webhook_receiver(request: Request, background_tasks: Background
     except Exception:
         pass
 
-    github_token = webhook.get("github_token")
-
     background_tasks.add_task(
         background_audit_runner,
         repo=repo_name,
@@ -777,7 +824,6 @@ async def github_webhook_receiver(request: Request, background_tasks: Background
         base_commit=base_commit,
         head_commit=head_commit,
         audit_id=audit_id,
-        github_token=github_token,
         base_url=resolved_base_url,
     )
 
