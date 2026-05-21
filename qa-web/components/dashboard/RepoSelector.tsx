@@ -242,7 +242,7 @@ export default function RepoSelector() {
             {repoDraft.fullName || 'No repository selected'}
           </p>
           <p className="text-[11px] font-mono text-faint mt-0.5 truncate">
-            {repoDraft.branch} · {repoDraft.module} · {repoDraft.scope}
+            {repoDraft.branch} · {repoDraft.module} · {String(repoDraft.scope)}
             {repoDraft.scope === 'pr' && repoDraft.prNumber && ` · PR #${repoDraft.prNumber}`}
             {repoDraft.scope === 'commit_range' &&
               repoDraft.baseCommit &&
