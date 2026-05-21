@@ -283,6 +283,41 @@ async def stream_audit(request: AuditRequest):
 
 
 
+@app.get("/audits")
+async def list_audits(limit: int = 50):
+    """Return all persisted audit records ordered newest-first."""
+    try:
+        from db.supabase import get_all_audits
+        records = get_all_audits(limit=limit)
+        return records
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to list audits: {exc}")
+
+
+@app.get("/audit/{audit_id}", response_model=AuditResponse)
+async def get_audit_by_id(audit_id: int) -> AuditResponse:
+    """Return a single audit record by id."""
+    try:
+        from db.supabase import get_audit_by_id
+        record = get_audit_by_id(audit_id)
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Audit {audit_id} not found.")
+        return AuditResponse(
+            audit_id=record.get("id"),
+            status=record.get("status", "unknown"),
+            repo=record.get("repo", ""),
+            probe_count=record.get("probe_count", 0),
+            findings=record.get("findings") or [],
+            report_markdown=record.get("report_markdown") or "",
+            report_path="",
+            origin=record.get("origin", "manual"),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch audit: {exc}")
+
+
 @app.get("/audit/latest", response_model=AuditResponse)
 async def get_latest_audit() -> AuditResponse:
     """Return the latest persisted audit report markdown and findings."""

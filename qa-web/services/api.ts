@@ -1,4 +1,5 @@
 import type {
+  AuditHistoryRecord,
   AuditRequestPayload,
   AuditResponse,
   BackendHealthResponse,
@@ -229,6 +230,17 @@ export function toggleWebhook(
       }),
     }
   )
+}
+
+export function listAudits(limit = 50) {
+  return request<AuditHistoryRecord[]>(`/audits?limit=${limit}`)
+}
+
+export function getAuditById(auditId: number) {
+  return request<AuditResponse>(`/audit/${auditId}`).then((r) => ({
+    ...r,
+    audit_id: r.audit_id ?? null,
+  }))
 }
 
 export function getAuditLogs(auditId: number) {

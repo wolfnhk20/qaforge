@@ -69,6 +69,42 @@ def save_audit(
     return data[0]
 
 
+def get_all_audits(limit: int = 50) -> list[Dict[str, Any]]:
+    """Fetch persisted audit rows ordered newest-first."""
+    if not is_configured():
+        return []
+    try:
+        response = (
+            get_client()
+            .table("audits")
+            .select("id, repo, module, status, probe_count, findings, origin, created_at, report_markdown")
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to fetch audits: {exc}") from exc
+    return getattr(response, "data", None) or []
+
+
+def get_audit_by_id(audit_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch a single audit record by its primary key."""
+    if not is_configured():
+        return None
+    try:
+        response = (
+            get_client()
+            .table("audits")
+            .select("*")
+            .eq("id", audit_id)
+            .single()
+            .execute()
+        )
+    except Exception as exc:
+        raise SupabasePersistenceError(f"Failed to fetch audit {audit_id}: {exc}") from exc
+    return getattr(response, "data", None)
+
+
 def get_latest_audit() -> Optional[Dict[str, Any]]:
     """Fetch the latest persisted audit row if available."""
     if not is_configured():

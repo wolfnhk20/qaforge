@@ -1,4 +1,16 @@
-export type AuditScope = 'full_module' | 'pr' | 'commit_range'
+export interface AuditHistoryRecord {
+  id: number
+  repo: string
+  module: string
+  status: 'completed' | 'running' | 'error'
+  probe_count: number
+  findings: Findings[]
+  origin: 'manual' | 'github_push'
+  created_at: string
+  report_markdown?: string
+}
+
+export interface AuditScope = 'full_module' | 'pr' | 'commit_range'
 
 export type PipelineStageStatus =
   | 'idle'

@@ -7,6 +7,7 @@ import PipelineView from '@/components/dashboard/PipelineView'
 import RepoSelector from '@/components/dashboard/RepoSelector'
 import ReportViewer from '@/components/dashboard/ReportViewer'
 import TerminalLogs from '@/components/dashboard/TerminalLogs'
+import { RecentAudits } from '@/components/history/RecentAudits'
 
 export default function DashboardPage() {
   const { phase } = useAudit()
@@ -20,6 +21,8 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <RepoSelector />
           <AuditLauncher />
+          {/* Recent history — always visible on dashboard */}
+          <RecentAudits />
         </div>
         {/* Right: terminal → compact findings */}
         <div className="space-y-4">

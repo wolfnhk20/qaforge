@@ -9,7 +9,7 @@ import { useHealth } from '@/hooks/useHealth'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard',  sub: 'Launch & monitor',  icon: Gauge },
-  { href: '/audits',    label: 'Audits',      sub: 'Execution history',  icon: Activity },
+  { href: '/audits',    label: 'Audits',      sub: 'History & inspection',  icon: Activity },
   { href: '/findings',  label: 'Findings',    sub: 'Behavioral gaps',    icon: Shield },
   { href: '/reports',   label: 'Reports',     sub: 'Narrative output',   icon: BookOpen },
   { href: '/settings',  label: 'Settings',    sub: 'Config & access',    icon: Settings2 },
