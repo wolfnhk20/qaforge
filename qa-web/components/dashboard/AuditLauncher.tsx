@@ -119,7 +119,7 @@ export default function AuditLauncher() {
             onClick={() => setScopeOpen(v => !v)}
             className="flex items-center gap-1.5 h-6 px-2.5 rounded border border-border bg-s2 text-[12px] text-muted hover:text-ink transition-colors"
           >
-            <span>{SCOPE_OPTIONS.find(s => s.value === repoDraft.scope)?.label || repoDraft.scope}</span>
+            <span>{SCOPE_OPTIONS.find(s => s.value === repoDraft.scope)?.label || String(repoDraft.scope)}</span>
             <ChevronDown className={cn('w-3 h-3 transition-transform flex-shrink-0', scopeOpen && 'rotate-180')} />
           </button>
           {scopeOpen && (
