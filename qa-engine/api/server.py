@@ -81,6 +81,14 @@ class WebhookActionRequest(BaseModel):
     created_by: Optional[str] = None
 
 
+class RepoConfigRequest(BaseModel):
+    """Persist repository runtime configuration (staging URL, branch)."""
+
+    staging_url: str
+    branch: str = config.DEFAULT_BRANCH
+    created_by: Optional[str] = None
+
+
 
 app = FastAPI(title="qa-engine API", version="0.2.0")
 
@@ -326,6 +334,46 @@ async def get_repo_webhook(owner: str, repo: str):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve webhook configuration: {exc}")
+
+
+@app.put("/repos/{owner}/{repo}/config")
+async def save_repo_runtime_config(owner: str, repo: str, request: RepoConfigRequest) -> Dict[str, Any]:
+    """Save staging URL and branch to repository_configs without toggling the GitHub webhook."""
+    repo_name = f"{owner}/{repo}"
+    try:
+        resolved_staging_url = resolve_audit_base_url(request.staging_url, required=True)
+    except TargetUrlError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    audit_branch = (request.branch or config.DEFAULT_BRANCH).strip() or config.DEFAULT_BRANCH
+    existing_config = get_repository_config(repo_name)
+    webhook = get_webhook(repo_name)
+    webhook_enabled = bool(
+        (existing_config or {}).get("webhook_enabled")
+        or (webhook or {}).get("enabled", False)
+    )
+
+    try:
+        save_repository_config(
+            repo_name=repo_name,
+            branch=audit_branch,
+            staging_url=resolved_staging_url,
+            webhook_enabled=webhook_enabled,
+            created_by=request.created_by,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save repository runtime configuration: {exc}",
+        ) from exc
+
+    return {
+        "status": "success",
+        "repo": repo_name,
+        "staging_url": resolved_staging_url,
+        "branch": audit_branch,
+        "webhook_enabled": webhook_enabled,
+    }
 
 
 @app.post("/repos/{owner}/{repo}/webhook")

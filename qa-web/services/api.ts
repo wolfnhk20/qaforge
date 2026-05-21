@@ -180,6 +180,31 @@ export function getWebhookConfig(owner: string, repo: string) {
   return request<WebhookConfig>(`/repos/${owner}/${repo}/webhook`)
 }
 
+export function saveRepositoryConfig(
+  owner: string,
+  repo: string,
+  options: {
+    stagingUrl: string
+    branch?: string
+    createdBy?: string
+  }
+) {
+  return request<{
+    status: string
+    repo: string
+    staging_url: string
+    branch: string
+    webhook_enabled: boolean
+  }>(`/repos/${owner}/${repo}/config`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      staging_url: options.stagingUrl,
+      branch: options.branch,
+      created_by: options.createdBy,
+    }),
+  })
+}
+
 export function toggleWebhook(
   owner: string,
   repo: string,

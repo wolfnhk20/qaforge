@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/lib/auth'
+import { validateStagingUrl } from '@/lib/validateStagingUrl'
 import { PIPELINE_BLUEPRINT } from '@/lib/utils'
 import { ApiError, getLatestAudit, streamAudit, getAuditLogs } from '@/services/api'
 import { useAuditStore } from '@/store/auditStore'
@@ -327,38 +328,19 @@ export function useAudit() {
       }
     }
 
-    const stagingUrl = repo.baseUrl?.trim()
-    if (!stagingUrl) {
-      failAuditRun('Staging base URL is required for runtime probe execution.')
-      appendLog({
-        level: 'error',
-        source: 'Validation',
-        message: 'Missing staging base URL.',
-        details: 'Enter the deployed API base URL in the audit launcher before running.',
-      })
-      isStreamingSSE.current = false
-      return
-    }
-
-    try {
-      const parsed = new URL(stagingUrl.includes('://') ? stagingUrl : `https://${stagingUrl}`)
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        throw new Error('invalid protocol')
-      }
-      if (!parsed.hostname) {
-        throw new Error('missing hostname')
-      }
-    } catch {
-      failAuditRun('Staging base URL is invalid. Use http(s)://host[:port] format.')
+    const urlCheck = validateStagingUrl(repo.baseUrl || '')
+    if (!urlCheck.ok) {
+      failAuditRun(urlCheck.error)
       appendLog({
         level: 'error',
         source: 'Validation',
         message: 'Invalid staging base URL.',
-        details: `Could not parse: ${stagingUrl}`,
+        details: urlCheck.error,
       })
       isStreamingSSE.current = false
       return
     }
+    const stagingUrl = urlCheck.normalized
 
     const payload: AuditRequestPayload = {
       repo: repo.fullName.trim(),

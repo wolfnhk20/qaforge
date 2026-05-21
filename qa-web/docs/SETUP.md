@@ -100,8 +100,8 @@ You usually **do not** create the webhook manually in GitHub. QAForge registers 
 
 1. Sign in at [https://qaforge-jet.vercel.app/login](https://qaforge-jet.vercel.app/login) with **Connect GitHub**.
 2. On Render, set `WEBHOOK_URL_BASE=https://qaforge-api.onrender.com`.
-3. In the dashboard, set **Staging URL** for the repo (runtime probe target).
-4. Open **Repository → Auto Audits → Enable Auto Audits**.
+3. In the dashboard **Repository → Auto Audits** panel, enter **Staging URL** (e.g. `https://abcd.ngrok-free.app`) and click **Save runtime config**.
+4. Click **Enable Auto Audits** (staging URL is required and persisted to Supabase `repository_configs`).
 
 The backend will:
 
