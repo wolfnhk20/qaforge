@@ -10,7 +10,7 @@ export interface AuditHistoryRecord {
   report_markdown?: string
 }
 
-export interface AuditScope = 'full_module' | 'pr' | 'commit_range'
+export type AuditScope = 'full_module' | 'pr' | 'commit_range'
 
 export type PipelineStageStatus =
   | 'idle'

@@ -20,7 +20,7 @@ export function RecentAudits() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={refetch}
+            onClick={() => refetch()}
             className="text-faint hover:text-muted transition-colors p-1 rounded hover:bg-s2"
           >
             <RefreshCw className={cn('w-3 h-3', isFetching && 'animate-spin')} />
